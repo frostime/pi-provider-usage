@@ -23,6 +23,7 @@
     "src",
     "docs",
     "README.md",
+    "README.zh-CN.md",
     "UPSTREAM.md",
     "LICENSE"
   ],
