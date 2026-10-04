@@ -1,5 +1,4 @@
-import type { CodexStatusPercentage } from "./settings.js";
-import type { ProviderUsageState, UsageBucket, UsageDisplayState, UsageModel, UsageReport } from "./types.js";
+import type { ProviderUsageState, UsageBucket, UsageDisplayState, UsageReport } from "./types.js";
 
 const BAR_SEGMENTS = 20;
 const VALUE_COLUMN = 29;
@@ -52,49 +51,13 @@ export function formatUsageReport(report: UsageReport, displayState: UsageDispla
   return lines.join("\n").trimEnd();
 }
 
-export function formatUsageStatusline(
-  report: UsageReport,
-  model?: UsageModel,
-  now = Date.now(),
-  showCodexResetCountdown = true,
-  codexStatusPercentage: CodexStatusPercentage = "remaining",
-): string | undefined {
-  if (report.providerId === "openai" && report.source === "openai-chatgpt-auth") return "chatgpt usage: web only";
-  if (report.providerId === "baseten") return formatBasetenStatusline(report);
-  if (report.providerId === "openai-codex") {
-    return formatCodexStatusline(report, model, now, showCodexResetCountdown, codexStatusPercentage);
-  }
-  if (report.providerId === "deepseek") return formatDeepSeekStatusline(report);
-  if (report.providerId === "fireworks") return formatFireworksStatusline(report);
-  if (report.providerId === "vercel-ai-gateway") return formatVercelAIGatewayStatusline(report);
-  if (report.providerId === "github-copilot") return formatGitHubCopilotStatusline(report);
-  if (report.providerId === "openrouter") {
-    const limit = report.buckets.find((bucket) => bucket.id === "key-limit");
-    if (limit?.remaining !== undefined) return `openrouter ${formatUsd(limit.remaining)} left`;
-    const total = report.metrics.find((metric) => metric.id === "usage-total");
-    if (typeof total?.value === "number") return `openrouter ${formatUsd(total.value)} used`;
-  }
-  if (report.providerId === "opencode-go") return formatOpenCodeZenStatusline(report);
-  if (report.providerId === "kimi-coding") return formatKimiCodingStatusline(report);
-  if (report.providerId === "moonshotai" || report.providerId === "moonshotai-cn") {
-    return formatMoonshotStatusline(report);
-  }
-  if (report.providerId === "minimax" || report.providerId === "minimax-cn") {
-    return formatMiniMaxStatusline(report, model);
-  }
-  if (report.providerId === "zai" || report.providerId === "zai-coding-cn") {
-    return formatZaiStatusline(report);
-  }
-  return undefined;
-}
-
 export function formatProviderStates(states: readonly ProviderUsageState[]): string {
   return states
     .map((state) => {
       if (state.status === "ready") return formatUsageReport(state.report, state.displayState);
       const label = state.displayState === "current" ? "Current" : "Configured";
       if (state.status === "selection-required") {
-        return `${state.providerName} · ${label}\nSelection required: choose this provider's ${state.singularLabel} by viewing it individually.`;
+        return `${state.providerName} · ${label}\nSelection required: multiple ${state.pluralLabel} are available. Selecting a billing ${state.singularLabel} is not supported in this version.`;
       }
       const status =
         state.status === "auth-unavailable"
@@ -114,11 +77,6 @@ function formatBasetenReport(lines: string[], report: UsageReport): void {
   }
 }
 
-function formatBasetenStatusline(report: UsageReport): string {
-  const subtotal = report.metrics.find((metric) => metric.id === "net-subtotal");
-  return subtotal ? `baseten USD ${subtotal.value} net` : "baseten no Model APIs usage";
-}
-
 function formatCodexReport(lines: string[], report: UsageReport): void {
   let previousGroup: string | undefined;
   for (const bucket of report.buckets) {
@@ -128,7 +86,7 @@ function formatCodexReport(lines: string[], report: UsageReport): void {
     }
     previousGroup = group;
     const fallback = bucket.id.endsWith(":secondary") ? "weekly" : "5h";
-    const label = `${formatWindowLabel(bucket.windowMinutes, fallback, false)} limit:`;
+    const label = `${formatWindowLabel(bucket.windowMinutes, fallback)} limit:`;
     lines.push(`${label.padEnd(VALUE_COLUMN)}${formatPercentBucket(bucket)}`);
   }
   for (const metric of report.metrics) {
@@ -155,16 +113,6 @@ function formatDeepSeekReport(lines: string[], report: UsageReport): void {
   }
 }
 
-function formatDeepSeekStatusline(report: UsageReport): string {
-  const availability = report.metrics.find((metric) => metric.id === "api-availability");
-  if (availability?.value !== "available") return "deepseek API unavailable";
-  const totals = ["CNY", "USD"].flatMap((currency) => {
-    const metric = report.metrics.find((candidate) => candidate.id === `${currency.toLowerCase()}-total`);
-    return metric ? [`${currency} ${metric.value}`] : [];
-  });
-  return totals.length > 0 ? `deepseek ${totals.join(" · ")}` : "deepseek balance unavailable";
-}
-
 function formatFireworksReport(lines: string[], report: UsageReport): void {
   lines.push(`${"Spend window:".padEnd(VALUE_COLUMN)}Last 30 days (rated)`);
   for (const currency of fireworksCurrencies(report)) {
@@ -174,12 +122,6 @@ function formatFireworksReport(lines: string[], report: UsageReport): void {
       lines.push(`${`${metric.label}:`.padEnd(VALUE_COLUMN)}${currency} ${metric.value}`);
     }
   }
-}
-
-function formatFireworksStatusline(report: UsageReport): string {
-  const totals = report.metrics.filter((metric) => metric.id.endsWith("-total"));
-  if (totals.length === 0) return "fireworks no rated usage";
-  return `fireworks ${totals.map((metric) => `${metric.currency} ${metric.value}`).join(" · ")}`;
 }
 
 function fireworksCurrencies(report: UsageReport): string[] {
@@ -195,11 +137,6 @@ function formatVercelAIGatewayReport(lines: string[], report: UsageReport): void
   for (const metric of report.metrics) {
     lines.push(`${`${metric.label}:`.padEnd(VALUE_COLUMN)}USD ${metric.value}`);
   }
-}
-
-function formatVercelAIGatewayStatusline(report: UsageReport): string {
-  const balance = report.metrics.find((metric) => metric.id === "credit-balance");
-  return balance ? `vercel USD ${balance.value} left` : "vercel credits unavailable";
 }
 
 function formatGitHubCopilotReport(lines: string[], report: UsageReport): void {
@@ -219,25 +156,8 @@ function formatGitHubCopilotReport(lines: string[], report: UsageReport): void {
   }
 }
 
-function formatGitHubCopilotStatusline(report: UsageReport): string {
-  const quota = findGitHubCopilotQuota(report);
-  const kind = compactGitHubCopilotQuotaKind(quota);
-  if (!quota || quota.limit === undefined || quota.remaining === undefined) {
-    return `copilot ${kind} unlimited`;
-  }
-  const overage = report.metrics.find((metric) => metric.id === "overage-used");
-  const overageSuffix = typeof overage?.value === "number" && overage.value > 0 ? ` +${overage.value} over` : "";
-  return `copilot ${kind === "premium" ? "" : `${kind} `}${quota.remaining}/${quota.limit} ${percentRemaining(quota)}%${overageSuffix}`;
-}
-
 function findGitHubCopilotQuota(report: UsageReport): UsageBucket | undefined {
   return report.buckets.find((bucket) => ["ai-credits", "premium-requests", "chat-requests"].includes(bucket.id));
-}
-
-function compactGitHubCopilotQuotaKind(bucket: UsageBucket | undefined): string {
-  if (bucket?.id === "ai-credits") return "credits";
-  if (bucket?.id === "chat-requests") return "chat";
-  return "premium";
 }
 
 function percentRemaining(bucket: UsageBucket): number {
@@ -270,16 +190,6 @@ function formatOpenCodeZenReport(lines: string[], report: UsageReport): void {
     const used = bucket.used ?? "unavailable";
     lines.push(`${`${bucket.label}:`.padEnd(VALUE_COLUMN)}${used}% used${reset}`);
   }
-}
-
-function formatOpenCodeZenStatusline(report: UsageReport): string | undefined {
-  const parts = ["zen"];
-  for (const bucket of report.buckets) {
-    if (bucket.used === undefined) continue;
-    const compact = bucket.id === "rolling" ? "r" : bucket.id === "weekly" ? "w" : "m";
-    parts.push(`${clampPercent(bucket.used).toFixed(0)}% ${compact}`);
-  }
-  return parts.length > 1 ? parts.join(" ") : undefined;
 }
 
 function formatKimiCodingReport(lines: string[], report: UsageReport): void {
@@ -320,35 +230,10 @@ function formatKimiCodingReport(lines: string[], report: UsageReport): void {
   }
 }
 
-function formatKimiCodingStatusline(report: UsageReport): string | undefined {
-  const fiveHour = report.buckets.find((bucket) => bucket.id === "five-hour");
-  const weekly = report.buckets.find((bucket) => bucket.id === "weekly");
-  const monthly = report.buckets.find((bucket) => bucket.id === "monthly");
-  const subWindow = fiveHour ?? report.buckets.find((bucket) => bucket.id !== "weekly" && bucket.id !== "monthly");
-  const selected = [subWindow, weekly, monthly].filter(
-    (bucket, index, buckets): bucket is UsageBucket => bucket !== undefined && buckets.indexOf(bucket) === index,
-  );
-  const parts = ["kimi"];
-  for (const bucket of selected) {
-    if (bucket.remaining === undefined || (bucket.unit !== "percent" && !bucket.limit)) continue;
-    const fallback = bucket.id === "weekly" ? "weekly" : "5h";
-    const window = bucket.id === "monthly" ? "mo" : formatWindowLabel(bucket.windowMinutes, fallback, true);
-    const remaining = bucket.unit === "percent" ? Math.round(clampPercent(bucket.remaining)) : percentRemaining(bucket);
-    parts.push(`${remaining}% ${window}`);
-  }
-  return parts.length > 1 ? parts.join(" ") : undefined;
-}
-
 function formatMoonshotReport(lines: string[], report: UsageReport): void {
   for (const metric of report.metrics) {
     lines.push(`${`${metric.label}:`.padEnd(VALUE_COLUMN)}${metric.currency} ${metric.value}`);
   }
-}
-
-function formatMoonshotStatusline(report: UsageReport): string {
-  const available = report.metrics.find((metric) => metric.id === "available-balance");
-  if (!available) return "moonshot balance unavailable";
-  return `moonshot ${available.currency ?? ""} ${available.value}`.replace(/\s+/gu, " ");
 }
 
 function formatMiniMaxReport(lines: string[], report: UsageReport): void {
@@ -373,95 +258,6 @@ function formatMiniMaxReport(lines: string[], report: UsageReport): void {
             : "unavailable";
     lines.push(`${`${bucket.label}:`.padEnd(VALUE_COLUMN)}${value}`);
   }
-}
-
-function formatMiniMaxStatusline(report: UsageReport, model?: UsageModel): string | undefined {
-  const prefix = report.providerId === "minimax-cn" ? "minimax cn" : "minimax";
-  if (report.source === "minimax-account-balance") {
-    const available = report.metrics.find((metric) => metric.id === "available-balance");
-    return available ? `${prefix} ${available.currency} ${available.value}` : undefined;
-  }
-  const selectedGroup = selectMiniMaxGroup(report, model);
-  if (!selectedGroup) return undefined;
-  const selected = report.buckets.filter((bucket) => bucket.groupId === selectedGroup);
-  const parts = [prefix];
-  for (const bucket of selected) {
-    const fallback = bucket.id.endsWith(":weekly") ? "weekly" : "5h";
-    const window = formatWindowLabel(bucket.windowMinutes, fallback, true);
-    if (bucket.period === "unlimited") {
-      parts.push(`unlimited ${window}`);
-      continue;
-    }
-    if (bucket.unit === "percent" && bucket.remaining !== undefined) {
-      parts.push(`${bucket.remaining}% ${window}`);
-      continue;
-    }
-    if (bucket.limit === undefined || bucket.remaining === undefined) continue;
-    parts.push(`${percentRemaining(bucket)}% ${window}`);
-  }
-  return parts.length > 1 ? parts.join(" ") : undefined;
-}
-
-function selectMiniMaxGroup(report: UsageReport, model?: UsageModel): string | undefined {
-  const groups = [
-    ...new Set(report.buckets.map((bucket) => bucket.groupId).filter((group): group is string => group !== undefined)),
-  ];
-  if (groups.length <= 1) return groups[0];
-  if (model && model.provider !== report.providerId) return undefined;
-  if (model) {
-    const modelKeys = [model.id, model.name]
-      .map(normalizeMiniMaxModelKey)
-      .filter((key): key is string => key !== undefined);
-    const candidates = groups.map((group) => {
-      const bucket = report.buckets.find((candidate) => candidate.groupId === group);
-      const patterns = [bucket?.groupLabel, ...(bucket?.modelKeys ?? []), group]
-        .map(normalizeMiniMaxModelKey)
-        .filter((key): key is string => key !== undefined);
-      return { group, patterns };
-    });
-    const exact = candidates.find(({ patterns }) =>
-      patterns.some((pattern) => !pattern.includes("*") && modelKeys.includes(pattern)),
-    );
-    if (exact) return exact.group;
-    const wildcard = candidates.find(({ patterns }) =>
-      patterns.some((pattern) => pattern.includes("*") && modelKeys.some((key) => wildcardKeyMatches(pattern, key))),
-    );
-    if (wildcard) return wildcard.group;
-  }
-  // Prefer the Coding Plan catch-all over hiding the chip.
-  return groups.find((group) => group === "general");
-}
-
-function normalizeMiniMaxModelKey(value: string | undefined): string | undefined {
-  const key = value?.toLowerCase().replace(/[^a-z0-9*]+/gu, "");
-  return key && /[a-z0-9]/u.test(key) ? key : undefined;
-}
-
-function wildcardKeyMatches(pattern: string, value: string): boolean {
-  if (!pattern.includes("*")) return pattern === value;
-  const segments = pattern.split("*").filter(Boolean);
-  let offset = 0;
-  for (const [index, segment] of segments.entries()) {
-    const found = value.indexOf(segment, offset);
-    if (found < 0 || (index === 0 && !pattern.startsWith("*") && found !== 0)) return false;
-    offset = found + segment.length;
-  }
-  const last = segments.at(-1);
-  return pattern.endsWith("*") || (last !== undefined && value.endsWith(last));
-}
-
-function formatZaiStatusline(report: UsageReport): string | undefined {
-  const selected = [
-    report.buckets.find((bucket) => bucket.id === "five-hour"),
-    report.buckets.find((bucket) => bucket.id === "weekly"),
-  ];
-  const parts = ["zai"];
-  for (const bucket of selected) {
-    if (!bucket?.limit || bucket.remaining === undefined) continue;
-    const fallback = bucket.id === "weekly" ? "weekly" : "5h";
-    parts.push(`${percentRemaining(bucket)}% ${formatWindowLabel(bucket.windowMinutes, fallback, true)}`);
-  }
-  return parts.length > 1 ? parts.join(" ") : undefined;
 }
 
 function formatCurrencyMetric(metric: UsageReport["metrics"][number]): string {
@@ -533,103 +329,6 @@ function formatGenericReport(lines: string[], report: UsageReport): void {
   }
 }
 
-function formatCodexStatusline(
-  report: UsageReport,
-  model?: UsageModel,
-  now = Date.now(),
-  showResetCountdown = true,
-  percentage: CodexStatusPercentage = "remaining",
-): string | undefined {
-  const group = selectCodexGroup(report, model);
-  if (!group) return formatCodexCreditsStatus(report);
-  const buckets = report.buckets.filter((bucket) => (bucket.groupId ?? bucket.id) === group);
-  const labelBucket = buckets[0];
-  const parts = [group === "codex" ? "codex" : `codex ${compactLimitLabel(labelBucket?.groupLabel ?? group)}`];
-  for (const bucket of buckets) {
-    if (bucket.remaining === undefined) continue;
-    const displayedPercentage = percentage === "used" ? (bucket.used ?? 100 - bucket.remaining) : bucket.remaining;
-    const percent = `${clampPercent(displayedPercentage).toFixed(0)}%`;
-    const fallback = bucket.id.endsWith(":secondary") ? "weekly" : "5h";
-    const window = formatWindowLabel(bucket.windowMinutes, fallback, true);
-    if (!showResetCountdown) {
-      parts.push(`${percent} ${window}`);
-      continue;
-    }
-    const reset = formatResetCountdown(bucket.resetsAt, now);
-    parts.push(`${percent} ${reset ? `↻ ${reset}` : window}`);
-  }
-  return parts.length > 1 ? parts.join(" ") : formatCodexCreditsStatus(report);
-}
-
-function formatCodexCreditsStatus(report: UsageReport): string {
-  const credits = report.metrics.find((metric) => metric.id === "credits");
-  if (!credits) return "codex usage unavailable";
-  if (credits.value === "none") return "codex no credits";
-  if (credits.value === "available") return "codex credits available";
-  if (credits.value === "unlimited") return "codex credits unlimited";
-  return `codex ${formatMetricValue(credits.value, "count")} credits`;
-}
-
-function selectCodexGroup(report: UsageReport, model?: UsageModel): string | undefined {
-  const groups = [...new Set(report.buckets.map((bucket) => bucket.groupId ?? bucket.id))];
-  if (model?.provider !== "openai-codex") {
-    return groups.includes("codex") ? "codex" : groups[0];
-  }
-  const modelKeys = normalizedModelKeys(model);
-  for (const group of groups) {
-    const bucket = report.buckets.find((candidate) => (candidate.groupId ?? candidate.id) === group);
-    const keys = [group, bucket?.groupLabel, ...(bucket?.modelKeys ?? [])]
-      .map(normalizeKey)
-      .filter((key): key is string => key !== undefined);
-    if (keys.some((key) => modelKeys.has(key))) return group;
-  }
-  const variants = [...modelKeys]
-    .map((key) => key.match(/(?:^|-)codex-(.+)$/)?.[1])
-    .filter((value): value is string => Boolean(value));
-  for (const variant of variants) {
-    const matches = groups.filter((group) => {
-      if (group === "codex") return false;
-      const key = normalizeKey(group);
-      return key ? normalizedKeyHasToken(key, variant) : false;
-    });
-    if (matches.length === 1) return matches[0];
-  }
-  return groups.includes("codex") ? "codex" : groups[0];
-}
-
-function normalizedModelKeys(model: UsageModel): Set<string> {
-  const keys = new Set<string>();
-  for (const value of [model.id, model.name]) {
-    const key = normalizeKey(value);
-    if (!key) continue;
-    keys.add(key);
-    const index = key.indexOf("codex");
-    if (index >= 0) keys.add(key.slice(index));
-  }
-  return keys;
-}
-
-function normalizeKey(value: string | undefined): string | undefined {
-  const separated = value?.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  if (!separated) return undefined;
-  let start = 0;
-  let end = separated.length;
-  while (separated[start] === "-") start += 1;
-  while (end > start && separated[end - 1] === "-") end -= 1;
-  return separated.slice(start, end) || undefined;
-}
-
-function normalizedKeyHasToken(key: string, token: string): boolean {
-  return key === token || key.startsWith(`${token}-`) || key.endsWith(`-${token}`) || key.includes(`-${token}-`);
-}
-
-function compactLimitLabel(label: string): string {
-  const normalized = label.replace(/[_-]+/g, " ").trim();
-  const codex = /\bcodex\s/iu.exec(normalized);
-  const suffix = codex ? normalized.slice(codex.index + codex[0].length).trim() : "";
-  return (suffix || normalized).toLowerCase().replace(/\s+/g, " ");
-}
-
 function formatPercentBucket(bucket: UsageBucket): string {
   return `${formatPercentBar(bucket)}${bucket.resetsAt ? ` (resets ${formatReset(bucket.resetsAt)})` : ""}`;
 }
@@ -640,30 +339,15 @@ function formatPercentBar(bucket: UsageBucket): string {
   return `[${"█".repeat(filled)}${"░".repeat(BAR_SEGMENTS - filled)}] ${remaining.toFixed(0)}% left`;
 }
 
-function formatWindowLabel(minutes: number | undefined, fallback: "5h" | "weekly", compact: boolean): string {
+function formatWindowLabel(minutes: number | undefined, fallback: "5h" | "weekly"): string {
   if (!minutes || !Number.isFinite(minutes) || minutes <= 0) {
-    return compact && fallback === "weekly" ? "wk" : capitalize(fallback);
+    return capitalize(fallback);
   }
-  if (minutes === 10_080) return compact ? "wk" : "Weekly";
+  if (minutes === 10_080) return "Weekly";
   if (minutes % 10_080 === 0) return `${minutes / 10_080}w`;
   if (minutes % 1_440 === 0) return `${minutes / 1_440}d`;
   if (minutes % 60 === 0) return `${minutes / 60}h`;
   return `${minutes}m`;
-}
-
-function formatResetCountdown(resetsAt: number | undefined, now: number): string | undefined {
-  if (resetsAt === undefined || !Number.isFinite(resetsAt) || !Number.isFinite(now)) return undefined;
-  const totalMinutes = Math.max(0, Math.ceil((resetsAt * 1_000 - now) / 60_000));
-  const days = Math.floor(totalMinutes / 1_440);
-  const hours = Math.floor((totalMinutes % 1_440) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return [`${String(days)}d`, hours > 0 ? `${String(hours)}h` : minutes > 0 ? `${String(minutes)}m` : ""]
-      .filter(Boolean)
-      .join("");
-  }
-  if (hours > 0) return [`${String(hours)}h`, minutes > 0 ? `${String(minutes)}m` : ""].filter(Boolean).join("");
-  return `${String(minutes)}m`;
 }
 
 function formatMetricValue(value: number | string, unit: UsageBucket["unit"] | undefined): string {

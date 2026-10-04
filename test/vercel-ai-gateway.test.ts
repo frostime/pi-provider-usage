@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   normalizeVercelAIGatewayCreditsPayload,
   queryProviderUsage,
   type ResolvedUsageAuth,
@@ -68,7 +67,6 @@ test("Vercel AI Gateway credits preserve decimal strings and native semantics", 
   assert.match(formatted, /^Vercel AI Gateway Credits · Current/mu);
   assert.match(formatted, /Credit balance:\s+USD 95\.500000000000000001/u);
   assert.match(formatted, /Lifetime spend:\s+USD 4\.499999999999999999/u);
-  assert.equal(formatUsageStatusline(report), "vercel USD 95.500000000000000001 left");
 });
 
 test("Vercel AI Gateway credits reject malformed or ambiguous monetary fields", () => {
@@ -155,7 +153,7 @@ test("Vercel AI Gateway transport revalidates around the fixed no-redirect reque
     assert.equal(requests[0]?.init?.redirect, "error");
     assert.deepEqual(requests[0]?.init?.headers, {
       Authorization: "Bearer vercel-test-secret",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
 
     const redirected = new Response(JSON.stringify({ balance: "1", total_used: "1" }), {

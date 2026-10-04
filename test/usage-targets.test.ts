@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
 import {
-  createUsageTargetSelectOptions,
   listUsageTargets,
   type ResolvedUsageAuth,
   resolveUsageTarget,
@@ -98,12 +97,6 @@ test("a second fake provider proves project selection and zero-target failure ar
   ]);
   const unresolved = await resolveUsageTarget(projects, auth, undefined, signal, 1_000, guard);
   assert.equal(unresolved.kind, "selection-required");
-  if (unresolved.kind === "selection-required") {
-    const options = createUsageTargetSelectOptions(unresolved.choices);
-    assert.equal(new Set(options.options).size, 2);
-    assert.equal(options.targetIdFor(options.options[0] ?? ""), "project-a");
-    assert.equal(options.targetIdFor(options.options[1] ?? ""), "project-b");
-  }
 
   const empty = targetAdapter("empty-provider", "workspace", "workspaces", []);
   await assert.rejects(

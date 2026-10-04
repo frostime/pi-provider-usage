@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { test, vi } from "vitest";
-import { createMockContext, createMockPi } from "../../../test/support.js";
-import { formatUsageReport, formatUsageStatusline } from "../src/format.js";
+import { createMockContext, createMockPi } from "./support.js";
+import { formatUsageReport } from "../src/format.js";
 import {
   createOAuthCredentialCandidateReader,
   OAUTH_CREDENTIAL_READINESS_CHANNEL,
@@ -72,7 +72,6 @@ test("native OpenAI OAuth reports authentication only, with no quota, countdown,
     assert.match(text, /Numerical usage and reset times are unavailable/);
     assert.match(text, /https:\/\/chatgpt\.com\/settings\/usage/);
     assert.doesNotMatch(text, /synthetic|[0-9]+%/);
-    assert.equal(formatUsageStatusline(report), "chatgpt usage: web only");
     assert.equal(fetch.mock.calls.length, 0);
   } finally {
     vi.unstubAllGlobals();

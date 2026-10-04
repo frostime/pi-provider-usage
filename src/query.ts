@@ -36,7 +36,6 @@ import type {
   PiModel,
   ResolvedUsageAuth,
   UsageProviderAdapter,
-  UsageQuerySettings,
   UsageReport,
   UsageRequestGuard,
   VercelAIGatewayCreditsPayload,
@@ -46,7 +45,6 @@ import type {
   ZaiQuotaPayload,
   ZaiSubscriptionPayload,
 } from "./types.js";
-import { resolveUsageTarget } from "./usage-targets.js";
 
 const BASETEN_BILLING_USAGE_URL = "https://api.baseten.co/v1/billing/usage_summary";
 const BASETEN_USAGE_WINDOW_DAYS = 30;
@@ -248,7 +246,6 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
   {
     id: "zai",
     displayName: "Z.AI",
-    invalidateCacheOnFailure: true,
     semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
     async query(auth, signal, timeoutMs, guard) {
       return queryZaiUsage("zai", "Z.AI", auth, signal, timeoutMs, guard);
@@ -257,7 +254,6 @@ export const SUPPORTED_ADAPTERS: readonly UsageProviderAdapter[] = [
   {
     id: "zai-coding-cn",
     displayName: "Z.AI Coding CN",
-    invalidateCacheOnFailure: true,
     semantics: { kind: "consumer-subscription", label: "GLM Coding Plan usage" },
     async query(auth, signal, timeoutMs, guard) {
       return queryZaiUsage("zai-coding-cn", "Z.AI Coding CN", auth, signal, timeoutMs, guard);
@@ -282,7 +278,6 @@ export const XAI_ADAPTER: UsageProviderAdapter = {
     kind: "consumer-subscription",
     label: "xAI consumer subscription usage",
   },
-  publishesStatusline: false,
   async query(auth, signal, timeoutMs, guard) {
     if (!guard) throw new Error("xAI usage requires request-boundary revalidation.");
     const startedAt = Date.now();
@@ -377,7 +372,7 @@ export async function resolveUsageAuth(
   const resolveSelectedAuthLast = ["deepseek", "minimax", "minimax-cn", "openai"].includes(adapter.id);
   if (!resolveSelectedAuthLast) modelAuth = await resolveCurrentModelAuth();
   if (typeof registry.getProviderAuth !== "function") {
-    throw new Error("pi-usage requires Pi 0.81.0 or newer to validate resolved provider auth.");
+    throw new Error("pi-provider-usage requires a Pi runtime that validates resolved provider auth.");
   }
   if (!moonshotProviderAuthIsAllowed(ctx, adapter.id)) return undefined;
   const providerResult = await registry.getProviderAuth(adapter.id);
@@ -498,41 +493,10 @@ export async function queryProviderUsage(
   signal: AbortSignal,
   timeoutMs: number,
   guard?: UsageRequestGuard,
-  targetOrSettings?: string | Readonly<UsageQuerySettings>,
+  targetId?: string,
 ): Promise<UsageReport> {
-  const startedAt = Date.now();
-  let targetId =
-    typeof targetOrSettings === "string"
-      ? targetOrSettings
-      : adapter.id === "fireworks"
-        ? targetOrSettings?.fireworksAccountId
-        : undefined;
-  let resolvedLegacyFireworksTarget = false;
   try {
-    if (adapter.id === "fireworks" && typeof targetOrSettings !== "string" && adapter.targets && guard) {
-      const target = await resolveUsageTarget(
-        adapter,
-        auth,
-        targetId,
-        signal,
-        remainingTimeout(timeoutMs, startedAt, "resolving the Fireworks account"),
-        guard,
-      );
-      if (target.kind === "selection-required") {
-        throw new Error("Fireworks account selection is required.");
-      }
-      targetId = target.targetId;
-      resolvedLegacyFireworksTarget = true;
-    }
-    return await adapter.query(
-      auth,
-      signal,
-      resolvedLegacyFireworksTarget
-        ? remainingTimeout(timeoutMs, startedAt, `querying ${adapter.displayName} usage`)
-        : timeoutMs,
-      guard,
-      targetId,
-    );
+    return await adapter.query(auth, signal, timeoutMs, guard, targetId);
   } catch (error) {
     if (isStaleExtensionContextError(error) || isAbortError(error)) throw error;
     throw new Error(redactUsageError(errorMessage(error), auth.secrets));
@@ -603,8 +567,6 @@ export async function fetchProviderJson(
   timeoutMs: number,
   description: string,
   request: {
-    method?: "GET" | "POST";
-    body?: Record<string, unknown>;
     redirect?: RequestRedirect;
     userAgent?: boolean;
     responseError?: (status: number, text: string) => string | undefined;
@@ -622,16 +584,12 @@ export async function fetchProviderJson(
   try {
     const headers = { ...auth.headers };
     if (request.userAgent !== false && !hasHeader(headers, "User-Agent")) {
-      headers["User-Agent"] = "pi-usage";
-    }
-    if (request.body && !hasHeader(headers, "Content-Type")) {
-      headers["Content-Type"] = "application/json";
+      headers["User-Agent"] = "pi-provider-usage";
     }
     const response = await fetch(url, {
-      method: request.method ?? "GET",
+      method: "GET",
       headers,
-      ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-      ...(request.redirect ? { redirect: request.redirect } : {}),
+      redirect: request.redirect ?? "error",
       signal: controller.signal,
     });
     if (response.redirected) throw new Error(`${description} refused a redirected response.`);

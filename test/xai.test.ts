@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { afterEach, test } from "vitest";
-import { createMockContext } from "../../../test/support.js";
-import { formatUsageReport, formatUsageStatusline } from "../src/format.js";
+import { createMockContext } from "./support.js";
+import { formatUsageReport } from "../src/format.js";
 import { normalizeXaiBillingPayload } from "../src/providers/xai.js";
 import { adapterForProvider, queryProviderUsage, resolveUsageAuth, XAI_ADAPTER } from "../src/query.js";
 import type { ResolvedUsageAuth, XaiBillingPayload, XaiUserPayload } from "../src/types.js";
@@ -94,7 +94,6 @@ test("normalizes current credits while keeping allowance, on-demand, and prepaid
   assert.match(formatted, /On-demand usage:\s+\$3\.00 used of \$50\.00 cap/);
   assert.match(formatted, /Prepaid balance:\s+\$12\.50/);
   assert.match(formatted, /Plan tier:\s+SuperGrok/);
-  assert.equal(formatUsageStatusline(report), undefined);
 });
 
 test("normalizes legacy limits, signed cents, zero wrappers, and empty configs", async () => {

@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   type DeepSeekBalancePayload,
   formatUsageReport,
-  formatUsageStatusline,
   normalizeDeepSeekBalancePayload,
   queryProviderUsage,
   type ResolvedUsageAuth,
@@ -92,7 +91,6 @@ test("DeepSeek API balance preserves exact separate currency amounts and determi
   assert.ok(formatted.indexOf("CNY balance:") < formatted.indexOf("USD balance:"));
   assert.match(formatted, /Total balance:\s+CNY 110\.00/u);
   assert.match(formatted, /Total balance:\s+USD 0\.12345678901234567890/u);
-  assert.equal(formatUsageStatusline(report), "deepseek CNY 110.00 · USD 0.12345678901234567890");
 });
 
 test("DeepSeek API balance preserves negative totals reported after a slight overdraft", () => {
@@ -117,7 +115,6 @@ test("DeepSeek API balance preserves negative totals reported after a slight ove
     ],
   );
   assert.match(formatUsageReport(report, "current"), /Total balance:\s+USD -0\.01/u);
-  assert.equal(formatUsageStatusline(report), "deepseek CNY 27.02 · USD -0.01");
 });
 
 test("DeepSeek API balance reports provider availability without inventing quota semantics", () => {
@@ -131,7 +128,6 @@ test("DeepSeek API balance reports provider availability without inventing quota
 
   assert.match(formatUsageReport(report, "configured"), /^DeepSeek API Balance · Configured/mu);
   assert.match(formatUsageReport(report, "configured"), /API calls:\s+Unavailable/u);
-  assert.equal(formatUsageStatusline(report), "deepseek API unavailable");
   assert.doesNotMatch(formatUsageReport(report, "configured"), /quota|reset|historical/iu);
 });
 
@@ -345,7 +341,7 @@ test("DeepSeek transport uses only the fixed balance endpoint and rejects redire
     assert.equal(requests[0]?.init?.redirect, "error");
     assert.deepEqual(requests[0]?.init?.headers, {
       Authorization: "Bearer deepseek-test-secret",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
     assert.ok(requests[0]?.init?.signal instanceof AbortSignal);
 

@@ -1,27 +1,4 @@
 export {
-  CODEX_FAST_MODEL_IDS,
-  CODEX_FAST_SERVICE_TIER,
-  CODEX_STANDARD_SERVICE_TIER,
-  codexFastAvailability,
-  codexFastIsEffective,
-  codexFastRequestTier,
-  codexFastStatusLabel,
-  correctCodexFastMessageCost,
-  rewriteCodexFastPayload,
-} from "./codex-fast.js";
-export type {
-  CodexResetAvailability,
-  CodexResetOption,
-  CodexResetOutcome,
-  CodexResetOutcomeCode,
-} from "./codex-resets.js";
-export {
-  consumeCodexResetCredit,
-  listCodexResetCredits,
-  normalizeCodexResetCreditsPayload,
-  resolveCodexResetAuth,
-} from "./codex-resets.js";
-export {
   abortError,
   awaitWithDeadline,
   errorMessage,
@@ -29,9 +6,8 @@ export {
   redactUsageError,
   runWithConcurrency,
   sanitizeDisplayText,
-  UsageCache,
 } from "./core.js";
-export { formatProviderStates, formatUsageReport, formatUsageStatusline } from "./format.js";
+export { formatProviderStates, formatUsageReport } from "./format.js";
 export { normalizeBasetenBillingUsagePayload } from "./providers/baseten.js";
 export { normalizeCodexBackendPayload } from "./providers/codex.js";
 export { normalizeDeepSeekBalancePayload } from "./providers/deepseek.js";
@@ -65,20 +41,6 @@ export {
   XAI_ADAPTER,
 } from "./query.js";
 export type {
-  CodexStatusPercentage,
-  UsageSettings,
-  UsageSettingsRuntime,
-  UsageSettingsState,
-  UsageTargetPublicationCheck,
-} from "./settings.js";
-export {
-  createUsageSettingsRuntime,
-  DEFAULT_USAGE_SETTINGS,
-  loadUsageSettings,
-  normalizeUsageSettings,
-  usageSettingsPath,
-} from "./settings.js";
-export type {
   BasetenBillingUsagePayload,
   DeepSeekBalancePayload,
   FireworksAccountsPayload,
@@ -91,10 +53,8 @@ export type {
   UsageBucket,
   UsageDisplayState,
   UsageMetric,
-  UsageModel,
   UsageProviderAdapter,
   UsageProviderTarget,
-  UsageQuerySettings,
   UsageReport,
   UsageRequestGuard,
   UsageSemantics,
@@ -106,9 +66,8 @@ export type {
   XaiUserPayload,
 } from "./types.js";
 export { default } from "./usage.js";
-export type { UsageTargetResolution, UsageTargetSelectOptions } from "./usage-targets.js";
+export type { UsageTargetResolution } from "./usage-targets.js";
 export {
-  createUsageTargetSelectOptions,
   isBoundedTargetId,
   listUsageTargets,
   normalizeUsageTargets,

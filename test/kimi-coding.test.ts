@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   type KimiCodingUsagePayload,
   normalizeKimiCodingUsagePayload,
   queryProviderUsage,
@@ -94,7 +93,6 @@ test("Kimi adapter normalizes weekly, five-hour, and daily numeric-string window
       resetsAt: 1_893_974_400,
     },
   ]);
-  assert.equal(formatUsageStatusline(report), "kimi 99% 5h 96% wk");
   assert.match(formatUsageReport(report, "current"), /1 of 100 used · 99% left.*resets/);
   assert.match(formatUsageReport(report, "current"), /40 of 1000 used · 96% left.*resets/);
 
@@ -109,7 +107,6 @@ test("Kimi adapter normalizes weekly, five-hour, and daily numeric-string window
     windowMinutes: 1_440,
     resetsAt: 1_893_542_400,
   });
-  assert.equal(formatUsageStatusline(daily), "kimi 95% 1d");
 });
 
 test("Kimi adapter displays a ratio-only monthly plan alongside a count-based five-hour window", () => {
@@ -135,7 +132,6 @@ test("Kimi adapter displays a ratio-only monthly plan alongside a count-based fi
     },
   ]);
   assert.equal(report.notes, undefined);
-  assert.equal(formatUsageStatusline(report), "kimi 56% 5h 21% mo");
   const rendered = formatUsageReport(report, "current");
   assert.match(rendered, /Monthly window:\s+79% used · 21% left \(resets /u);
   assert.doesNotMatch(rendered, /78\.77 of 100 used/u);
@@ -155,7 +151,6 @@ test("Kimi ratio report percentages remain complementary at half-percent boundar
       formatUsageReport(report, "current"),
       new RegExp(`Monthly window:\\s+${used}% used · ${left}% left`, "u"),
     );
-    assert.equal(formatUsageStatusline(report), `kimi ${left}% mo`);
   }
 });
 
@@ -172,7 +167,6 @@ test("Kimi ratio-only plans show five-hour, weekly, and monthly windows without 
       { id: "monthly", unit: "percent", windowMinutes: undefined },
     ],
   );
-  assert.equal(formatUsageStatusline(report), "kimi 56% 5h 75% wk 21% mo");
 });
 
 test("Kimi ratio windows never override explicit windows or mask duplicates", () => {
@@ -188,7 +182,6 @@ test("Kimi ratio windows never override explicit windows or mask duplicates", ()
       ["monthly", "percent"],
     ],
   );
-  assert.equal(formatUsageStatusline(report), "kimi 56% 5h 90% wk 21% mo");
 
   const duplicate = fixture("malformed") as KimiCodingUsagePayload & { usages: Record<string, unknown> };
   duplicate.usages = { limit_5h: { used_ratio: 0.25 }, limit_month_total: { used_ratio: 0 } };
@@ -218,7 +211,6 @@ test("Kimi ratio windows reject invalid values and ignore unrecognized keys", ()
   assert.deepEqual(report.buckets, [
     { id: "monthly", label: "Monthly window", used: 100, remaining: 0, unit: "percent" },
   ]);
-  assert.equal(formatUsageStatusline(report), "kimi 0% mo");
   assert.equal(report.notes, undefined);
 
   assert.throws(
@@ -320,7 +312,6 @@ test("Kimi adapter derives missing counters from limit on remaining-only and unt
     },
   ]);
   assert.equal(report.notes, undefined);
-  assert.equal(formatUsageStatusline(report), "kimi 98% 5h 100% wk");
   assert.match(formatUsageReport(report, "current"), /0 of 100 used · 100% left/);
 
   // The disabled booster wallet in the live response carries no balance amounts, so no metrics are invented.
@@ -378,7 +369,6 @@ test("Kimi adapter keeps booster-wallet currency separate from plan counts", () 
   assert.match(rendered, /Used this month:\s+\$50\.00/);
   assert.match(rendered, /Monthly limit:\s+\$200\.00/);
   assert.doesNotMatch(rendered, /requests|% left/iu);
-  assert.equal(formatUsageStatusline(report), undefined);
 });
 
 test("Kimi booster wallet accepts the top-level snake-case alias without mixing plan and money", () => {
@@ -387,7 +377,6 @@ test("Kimi booster wallet accepts the top-level snake-case alias without mixing 
   const report = normalizeKimiCodingUsagePayload(payload, 920);
   assert.deepEqual(report.metrics, normalizeKimiCodingUsagePayload(fixture("booster-wallet"), 900).metrics);
   assert.match(formatUsageReport(report, "current"), /Extra usage wallet:/u);
-  assert.equal(formatUsageStatusline(report), "kimi 56% 5h 21% mo");
 
   const both = { ...payload, boosterWallet: { balance: { type: "BOOSTER", amount: "1" } } };
   assert.deepEqual(normalizeKimiCodingUsagePayload(both, 921).metrics, []);
@@ -577,7 +566,7 @@ test("Kimi transport uses only the fixed endpoint and rejects redirects", async 
     assert.equal(requests[0]?.init?.redirect, "error");
     assert.deepEqual(requests[0]?.init?.headers, {
       Authorization: "Bearer kimi-test-secret",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
 
     const redirected = new Response(JSON.stringify(combinedPlanFixture()), { status: 200 });

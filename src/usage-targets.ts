@@ -13,11 +13,6 @@ export type UsageTargetResolution =
       choices: readonly UsageProviderTarget[];
     };
 
-export interface UsageTargetSelectOptions {
-  options: readonly string[];
-  targetIdFor(option: string): string | undefined;
-}
-
 export async function resolveUsageTarget(
   adapter: UsageProviderAdapter,
   auth: ResolvedUsageAuth,
@@ -85,27 +80,6 @@ export function normalizeUsageTargets(targets: readonly UsageProviderTarget[]): 
     const safeDescription = description ? sanitizeDisplayText(description, MAX_TARGET_DESCRIPTION_CHARS) : undefined;
     return { id, label: safeLabel, ...(safeDescription ? { description: safeDescription } : {}) };
   });
-}
-
-export function createUsageTargetSelectOptions(targets: readonly UsageProviderTarget[]): UsageTargetSelectOptions {
-  const normalized = normalizeUsageTargets(targets);
-  const ids = new Map<string, string>();
-  const options = normalized.map((target) => {
-    const base = target.description ? `${target.label} — ${target.description}` : target.label;
-    let option = base;
-    if (ids.has(option)) {
-      const safeId = sanitizeDisplayText(target.id, 80) || "target";
-      option = `${base} · ${safeId}`;
-      let duplicate = 2;
-      while (ids.has(option)) {
-        option = `${base} · ${safeId} (${duplicate})`;
-        duplicate += 1;
-      }
-    }
-    ids.set(option, target.id);
-    return option;
-  });
-  return { options, targetIdFor: (option) => ids.get(option) };
 }
 
 function remainingTargetTimeout(timeoutMs: number, startedAt: number): number {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import type { UsageReport } from "../src/index.js";
 import {
   awaitWithDeadline,
@@ -11,7 +11,6 @@ import {
   runWithConcurrency,
   SUPPORTED_ADAPTERS,
   sanitizeDisplayText,
-  UsageCache,
 } from "../src/index.js";
 
 const report: UsageReport = {
@@ -38,38 +37,6 @@ test("credential fingerprints are process-salted, deterministic, and do not expo
   assert.notEqual(first, anotherProcess);
   assert.notEqual(first, anotherAccount);
   assert.doesNotMatch(first, /secret/);
-});
-
-test("usage cache isolates identities, expires entries, and remains bounded", () => {
-  const cache = new UsageCache(300_000, 4);
-  cache.set("openrouter", "account-a", report, 1_000);
-
-  assert.equal(cache.get("openrouter", "account-a", 1_001), report);
-  assert.equal(cache.get("openrouter", "account-b", 1_001), undefined);
-  assert.equal(cache.get("openai-codex", "account-a", 1_001), undefined);
-  assert.equal(cache.get("openrouter", "account-a", 301_001), undefined);
-  assert.equal(cache.size, 0);
-
-  for (let index = 0; index < 10; index += 1) {
-    cache.set("openrouter", `account-${index}`, report, 400_000 + index);
-  }
-  assert.equal(cache.size, 4);
-  assert.equal(cache.get("openrouter", "account-0", 400_020), undefined);
-  assert.equal(cache.get("openrouter", "account-9", 400_020), report);
-  cache.clearProvider("openrouter");
-  assert.equal(cache.size, 0);
-});
-
-test("usage cache deletion preserves other credentials and providers", () => {
-  const cache = new UsageCache(300_000);
-  cache.set("zai", "account-a", report, 1_000);
-  cache.set("zai", "account-b", report, 1_000);
-  cache.set("zai-coding-cn", "account-a", report, 1_000);
-  cache.delete("zai", "account-a");
-  cache.delete("zai", "account-a");
-  assert.equal(cache.get("zai", "account-a", 1_001), undefined);
-  assert.equal(cache.get("zai", "account-b", 1_001), report);
-  assert.equal(cache.get("zai-coding-cn", "account-a", 1_001), report);
 });
 
 test("bounded orchestration retains stable partial results and respects cancellation", async () => {
@@ -371,7 +338,7 @@ test("GitHub Copilot named credential selection is deterministic and reaches onl
     assert.deepEqual(init.headers, {
       Authorization: "Bearer matching-github-oauth",
       "X-GitHub-Api-Version": "2025-05-01",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
   } finally {
     fetchMock.mockRestore();
@@ -481,7 +448,7 @@ test("OpenCode Go usage resolves auth before using the canonical versioned endpo
     assert.equal(request?.method, "GET");
     assert.deepEqual(request?.headers, {
       Authorization: "Bearer current-model-key",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
     assert.ok(request?.signal instanceof AbortSignal);
     assert.equal(report.providerId, "opencode-go");

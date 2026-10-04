@@ -38,9 +38,8 @@ export const OPENAI_CHATGPT_ADAPTER: UsageProviderAdapter = {
       buckets: [],
       metrics: [{ id: "plan-auth", label: "ChatGPT plan authentication", value: "Connected (native OAuth)" }],
       notes: [
-        "Numerical usage and reset times are unavailable in pi-usage for native OpenAI OAuth.",
+        "Numerical usage and reset times are unavailable for native OpenAI OAuth.",
         `Manage usage: ${CHATGPT_USAGE_SETTINGS_URL}`,
-        "Fast mode and earned reset redemption remain legacy openai-codex features.",
       ],
     };
   },

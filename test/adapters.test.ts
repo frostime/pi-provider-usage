@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "vitest";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   normalizeCodexBackendPayload,
   normalizeGitHubCopilotUsagePayload,
   normalizeOpenRouterKeyPayload,
@@ -44,7 +43,6 @@ test("GitHub Copilot adapter normalizes legacy premium request quota", () => {
     resetsAt: 1_785_542_400,
   });
   assert.match(formatUsageReport(report, "current"), /245 of 300 left · 82%/);
-  assert.equal(formatUsageStatusline(report), "copilot 245/300 82%");
 });
 
 test("GitHub Copilot adapter preserves AI-credit billing semantics", () => {
@@ -79,7 +77,6 @@ test("GitHub Copilot adapter preserves AI-credit billing semantics", () => {
     resetsAt: 1_785_542_400,
   });
   assert.match(formatUsageReport(report, "current"), /AI credits:\s+1200 of 1500 left · 80%/);
-  assert.equal(formatUsageStatusline(report), "copilot credits 1200/1500 80%");
 });
 
 test("GitHub Copilot adapter represents overage without rejecting negative remaining quota", () => {
@@ -103,7 +100,6 @@ test("GitHub Copilot adapter represents overage without rejecting negative remai
   assert.equal(report.buckets[0]?.used, 1_600);
   assert.deepEqual(report.metrics, [{ id: "overage-used", label: "Additional usage", value: 100, unit: "count" }]);
   assert.match(formatUsageReport(report, "current"), /Additional usage:\s+100 AI credits/);
-  assert.equal(formatUsageStatusline(report), "copilot credits 0/1500 0% +100 over");
 });
 
 test("GitHub Copilot adapter normalizes the free-tier quota shape", () => {
@@ -132,7 +128,6 @@ test("GitHub Copilot adapter normalizes the free-tier quota shape", () => {
     resetsAt: 1_785_542_400,
   });
   assert.match(formatUsageReport(report, "current"), /Chat requests:\s+40 of 50 left · 80%/);
-  assert.equal(formatUsageStatusline(report), "copilot chat 40/50 80%");
 });
 
 test("GitHub Copilot adapter handles unlimited quota and rejects incomplete responses", () => {
@@ -143,7 +138,6 @@ test("GitHub Copilot adapter handles unlimited quota and rejects incomplete resp
     600,
   );
   assert.match(formatUsageReport(unlimited, "configured"), /Premium requests:\s+unlimited/);
-  assert.equal(formatUsageStatusline(unlimited), "copilot premium unlimited");
 
   const unlimitedCredits = normalizeGitHubCopilotUsagePayload(
     {
@@ -154,7 +148,6 @@ test("GitHub Copilot adapter handles unlimited quota and rejects incomplete resp
     650,
   );
   assert.match(formatUsageReport(unlimitedCredits, "current"), /AI credits:\s+unlimited/);
-  assert.equal(formatUsageStatusline(unlimitedCredits), "copilot credits unlimited");
 
   const derivedOverage = normalizeGitHubCopilotUsagePayload(
     {
@@ -169,7 +162,6 @@ test("GitHub Copilot adapter handles unlimited quota and rejects incomplete resp
     675,
   );
   assert.equal(derivedOverage.metrics[0]?.value, 20);
-  assert.equal(formatUsageStatusline(derivedOverage), "copilot 0/300 0% +20 over");
 
   assert.throws(() => normalizeGitHubCopilotUsagePayload({}, 0), /supported quota/iu);
   assert.throws(
@@ -219,7 +211,6 @@ test("OpenRouter adapter normalizes documented per-key spend limits without clai
   );
   assert.match(formatUsageReport(report, "current"), /OpenRouter Usage · Current/);
   assert.match(formatUsageReport(report, "current"), /API-key spend limits/);
-  assert.equal(formatUsageStatusline(report), "openrouter $74.50 left");
 });
 
 test("OpenRouter adapter keeps unlimited keys meaningful and sanitizes account labels", () => {
@@ -242,7 +233,6 @@ test("OpenRouter adapter keeps unlimited keys meaningful and sanitizes account l
 
   assert.equal(report.accountLabel, "main key");
   assert.deepEqual(report.buckets, []);
-  assert.equal(formatUsageStatusline(report), "openrouter $12.75 used");
   assert.match(formatUsageReport(report, "configured"), /OpenRouter Usage · Configured/);
   assert.match(formatUsageReport(report, "configured"), /No per-key spend cap/);
 });
@@ -294,17 +284,15 @@ test("Codex adapter preserves credit availability without a numeric balance", ()
   );
   assert.deepEqual(report.metrics, [{ id: "credits", label: "Credits", value: "available" }]);
   assert.match(formatUsageReport(report, "current"), /Credits:\s+available/);
-  assert.equal(formatUsageStatusline(report), "codex credits available");
 });
 
 test("Codex adapter preserves explicit credit unavailability without rate-limit windows", () => {
   const report = normalizeCodexBackendPayload({ credits: { has_credits: false } }, 2_950);
   assert.deepEqual(report.metrics, [{ id: "credits", label: "Credits", value: "none" }]);
   assert.match(formatUsageReport(report, "current"), /Credits:\s+none/);
-  assert.equal(formatUsageStatusline(report), "codex no credits");
 });
 
-test("Codex adapter preserves windows, credits, and model-specific statusline buckets", () => {
+test("Codex adapter preserves windows, credits, and model-specific limit buckets", () => {
   const report = normalizeCodexBackendPayload(
     {
       plan_type: "pro",
@@ -336,35 +324,4 @@ test("Codex adapter preserves windows, credits, and model-specific statusline bu
   assert.equal(report.metrics.find((metric) => metric.id === "reset-credits")?.value, 2);
   assert.match(formatUsageReport(report, "current"), /5h limit:/);
   assert.match(formatUsageReport(report, "current"), /Weekly limit:/);
-  const statusNow = 1_000_000;
-  assert.equal(formatUsageStatusline(report, undefined, statusNow), "codex 70% ↻ 2h30m 20% ↻ 2d15m");
-  assert.equal(formatUsageStatusline(report, undefined, statusNow, false), "codex 70% 5h 20% wk");
-  assert.equal(formatUsageStatusline(report, undefined, statusNow, true, "used"), "codex 30% ↻ 2h30m 80% ↻ 2d15m");
-  assert.equal(formatUsageStatusline(report, undefined, statusNow, false, "used"), "codex 30% 5h 80% wk");
-  assert.equal(
-    formatUsageStatusline(
-      report,
-      {
-        id: "gpt-5.3-codex-spark",
-        name: "GPT-5.3 Codex Spark",
-        provider: "openai-codex",
-      },
-      statusNow,
-      true,
-      "used",
-    ),
-    "codex spark 10% 5h",
-  );
-
-  const sparkBucket = report.buckets.find((bucket) => bucket.groupId === "gpt-5.3-codex-spark");
-  assert.ok(sparkBucket);
-  sparkBucket.groupLabel = `Codex${"\t".repeat(100_000)}Spark`;
-  assert.equal(
-    formatUsageStatusline(report, {
-      id: "gpt-5.3-codex-spark",
-      name: "-".repeat(100_000),
-      provider: "openai-codex",
-    }),
-    "codex spark 90% 5h",
-  );
 });

@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   normalizeFireworksAccountsPayload,
   normalizeFireworksBillingSummaryPayload,
   queryProviderUsage,
@@ -12,7 +11,6 @@ import {
   resolveUsageTarget,
   SUPPORTED_ADAPTERS,
   type UsageProviderAdapter,
-  type UsageQuerySettings,
 } from "../src/index.js";
 
 const FIREWORKS_MODEL = {
@@ -113,7 +111,6 @@ test("Fireworks billing summary sums rated line items exactly per currency and s
   assert.match(formatted, /Dedicated deployments:\s+USD 0\.75/u);
   assert.match(formatted, /Training:\s+USD -1\.25/u);
   assert.ok(formatted.indexOf("USD rated spend:") < formatted.indexOf("EUR rated spend:"));
-  assert.equal(formatUsageStatusline(report), "fireworks USD 11.845678901 · EUR 0.000000005");
 });
 
 test("Fireworks billing summary accepts empty rated line items without inventing quota semantics", () => {
@@ -125,7 +122,6 @@ test("Fireworks billing summary accepts empty rated line items without inventing
     "Rated line items may differ from the final invoice once credits or adjustments are applied.",
     "Fireworks returned no rated line items for the last 30 days.",
   ]);
-  assert.equal(formatUsageStatusline(report), "fireworks no rated usage");
   assert.doesNotMatch(formatUsageReport(report, "configured"), /quota|reset|remaining/iu);
 });
 
@@ -360,7 +356,7 @@ test("Fireworks transport auto-selects a single account and queries only the fix
     assert.equal(requests[1]?.init?.redirect, "error");
     assert.deepEqual(requests[1]?.init?.headers, {
       Authorization: "Bearer fw-test-secret",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
 
     const redirected = summaryResponse();
@@ -503,41 +499,6 @@ test("Fireworks transport follows opaque pagination tokens across account pages"
     assert.equal(requests[0], "https://api.fireworks.ai/v1/accounts?pageSize=200");
     assert.equal(requests[1], "https://api.fireworks.ai/v1/accounts?pageSize=200&pageToken=token%2B%2F%3D");
     assert.match(requests[2] ?? "", /\/v1\/accounts\/bold\/billing\/summary\?/u);
-  } finally {
-    vi.unstubAllGlobals();
-  }
-});
-
-test("queryProviderUsage preserves legacy Fireworks settings and auto-selection", async () => {
-  const requests: string[] = [];
-  const fetchMock = vi.fn(async (input: string | URL | Request) => {
-    const url = String(input);
-    requests.push(url);
-    return url.includes("/v1/accounts?")
-      ? new Response(JSON.stringify({ accounts: [accountRow("acme")] }), { status: 200 })
-      : summaryResponse();
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  try {
-    const legacySettings: UsageQuerySettings = { fireworksAccountId: "acme" };
-    for (const settings of [legacySettings, undefined]) {
-      const report = await queryProviderUsage(
-        adapter,
-        fireworksAuth(),
-        new AbortController().signal,
-        1_000,
-        async () => undefined,
-        settings,
-      );
-      assert.equal(report.accountLabel, "acme");
-    }
-    assert.equal(requests.filter((url) => url.includes("/v1/accounts?")).length, 2);
-    assert.equal(requests.filter((url) => url.includes("/billing/summary")).length, 2);
-    assert.ok(
-      requests
-        .filter((url) => url.includes("/billing/summary"))
-        .every((url) => /\/v1\/accounts\/acme\/billing\/summary\?/u.test(url)),
-    );
   } finally {
     vi.unstubAllGlobals();
   }

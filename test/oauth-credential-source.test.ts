@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "vitest";
-import { createMockContext, createMockPi } from "../../../test/support.js";
+import { createMockContext, createMockPi } from "./support.js";
 import {
   collectOAuthCredentialCandidates,
   createOAuthCredentialCandidateReader,

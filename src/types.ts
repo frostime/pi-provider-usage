@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 export type PiModel = NonNullable<ExtensionContext["model"]>;
-export type UsageModel = Pick<PiModel, "id" | "name" | "provider">;
 
 export type UsageSemanticsKind = "consumer-subscription" | "api-key" | "project";
 export type UsageUnit = "percent" | "usd" | "currency" | "count";
@@ -63,10 +62,6 @@ export interface ResolvedUsageAuth {
   effectiveBaseUrl?: string;
 }
 
-export interface UsageQuerySettings {
-  fireworksAccountId?: string;
-}
-
 export type UsageRequestGuard = () => Promise<void>;
 
 export interface UsageProviderTarget {
@@ -90,9 +85,6 @@ export interface UsageProviderAdapter {
   id: string;
   displayName: string;
   semantics: UsageSemantics;
-  publishesStatusline?: boolean;
-  /** Invalidate the matching ready report when the latest query fails; default preserves it. */
-  invalidateCacheOnFailure?: boolean;
   targets?: UsageTargetResolver;
   query(
     auth: ResolvedUsageAuth,

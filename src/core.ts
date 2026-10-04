@@ -1,62 +1,4 @@
 import { createHmac } from "node:crypto";
-import type { UsageReport } from "./types.js";
-
-export class UsageCache {
-  private readonly entries = new Map<string, { createdAt: number; report: UsageReport }>();
-  private readonly ttlMs: number;
-  private readonly maxEntries: number;
-
-  constructor(ttlMs: number, maxEntries = 32) {
-    if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new Error("Cache TTL must be positive.");
-    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) {
-      throw new Error("Cache entry limit must be a positive integer.");
-    }
-    this.ttlMs = ttlMs;
-    this.maxEntries = maxEntries;
-  }
-
-  get size(): number {
-    return this.entries.size;
-  }
-
-  get(providerId: string, fingerprint: string, now = Date.now()): UsageReport | undefined {
-    this.sweepExpired(now);
-    return this.entries.get(cacheKey(providerId, fingerprint))?.report;
-  }
-
-  set(providerId: string, fingerprint: string, report: UsageReport, now = Date.now()): void {
-    this.sweepExpired(now);
-    const key = cacheKey(providerId, fingerprint);
-    this.entries.delete(key);
-    while (this.entries.size >= this.maxEntries) {
-      const oldest = this.entries.keys().next().value;
-      if (oldest === undefined) break;
-      this.entries.delete(oldest);
-    }
-    this.entries.set(key, { createdAt: now, report });
-  }
-
-  delete(providerId: string, fingerprint: string): void {
-    this.entries.delete(cacheKey(providerId, fingerprint));
-  }
-
-  clearProvider(providerId: string): void {
-    for (const key of this.entries.keys()) {
-      if (key.startsWith(`${providerId}:`)) this.entries.delete(key);
-    }
-  }
-
-  clear(): void {
-    this.entries.clear();
-  }
-
-  private sweepExpired(now: number): void {
-    for (const [key, entry] of this.entries) {
-      if (now - entry.createdAt >= this.ttlMs) this.entries.delete(key);
-    }
-  }
-}
-
 export function fingerprintResolvedAuth(
   auth: {
     apiKey?: string;
@@ -229,10 +171,6 @@ function skipTerminalEscape(value: string, start: number, codePoint: number): nu
     return index;
   }
   return Math.min(value.length, start + (codePoint === 0x1b ? 2 : 1));
-}
-
-function cacheKey(providerId: string, fingerprint: string): string {
-  return `${providerId}:${fingerprint}`;
 }
 
 function escapeRegExp(value: string): string {

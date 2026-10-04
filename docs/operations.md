@@ -1,31 +1,21 @@
-# Usage queries and reset redemption
+# 查询行为
 
-[Back to README](../README.md#-commands)
+`/provider-usage` 不带参数时查询当前模型的 Provider。指定一个 Provider ID 时只查询它；`all` 查询所有已配置且内置支持的 Provider。`codex` 等价于 `openai-codex`。
 
-## Choose a provider target
+补全读取 Pi 的运行时认证配置，不会为了生成补全项发起用量请求。已配置不等于一定可以查询：认证过期、接口不支持或非官方地址都会在执行时显示原因。
 
-A target is the provider-owned account, organization, project, team, or workspace used for one usage query.
-Providers without target discovery query immediately; a single returned target is selected automatically without saving settings.
-When several targets exist, `/usage` remembers an explicit selection by provider and reuses it only while it remains in a fresh listing.
-A missing remembered target reports **Selection required** instead of querying another target silently.
-Use **Select <target>…** for the current provider or **Change <target>…** for a ready current or individually viewed provider.
+每个 Provider 的认证解析、计费账号发现和用量请求共用 15 秒超时；`all` 最多并发两个查询。结果按内置 Provider 顺序显示，包含成功报告和独立失败原因。不读取旧缓存，不自动重试，不定时查询。
 
-Viewing another provider may open one target prompt after that provider is queried lazily.
-Cancelling changes nothing.
-Authentication and target membership are revalidated before saving an explicit selection, then resolved again before billing is queried.
-**View all configured providers…** never opens nested target prompts; view an unresolved provider individually to select its target.
-Background refresh also remains non-interactive and reports `selection required` until `/usage` completes the choice.
-Fireworks accounts are the first implementation of this provider-neutral flow.
+模型切换、会话启动/切换、退出和后续查询会取消正在执行的查询；已取消的查询不会发布迟到结果。认证在请求前后重新校验，发现变化时提示重新执行命令，不发布先前账号的报告。
 
-For credentials, endpoints, and provider-specific meanings, see the [provider reference](./providers.md).
-For selection storage and migration, see [Settings](../README.md#-settings).
+TUI 结果保存为自定义会话条目，便于回看，不送入模型上下文。RPC 通过通知返回文本，不打开终端菜单。命令不会主动触发模型回复。print/JSON 模式不受支持。
 
-## Redeem a Codex usage reset
+## 计费账号
 
-For the current OpenAI Codex OAuth account, **Redeem usage limit reset…** checks fresh earned-reset details, lets you choose a reset, and previews its exact effect before confirmation.
-Custom or proxy origins are rejected before mutation.
-**No, go back** is the safe default, and cancellation before confirmation sends no mutation.
+Fireworks 需要一个计费账号才能查询：
 
-After confirmation, the reset cannot be cancelled from its progress view; session replacement or shutdown still aborts owned work.
-A transport failure offers **Try again** with the same redemption request ID so the backend can handle an uncertain retry idempotently.
-Successful, already-completed, not-needed, and no-credit outcomes are reported separately, then usage and the statusline refresh for the still-current account.
+- 只有一个可见账号：自动查询这个账号。
+- 多个可见账号：显示需要指定账号，当前版本不提供选择操作。
+- 没有可见账号：显示账号发现失败。
+
+不读取旧 `pi-usage.json` 的账号选择，不创建或修改这个文件，也不擅自选择第一个账号。`all` 遇到这种情况会继续显示其他 Provider 的结果。

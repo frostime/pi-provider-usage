@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   normalizeMoonshotBalancePayload,
   providerIsConfigured,
   queryProviderUsage,
@@ -89,7 +88,6 @@ test("Moonshot balances retain region currency and separate account components",
     const formatted = formatUsageReport(report, "current");
     assert.match(formatted, new RegExp(`^${title} · Current`, "mu"));
     assert.match(formatted, new RegExp(`Available balance:\\s+${currency} 49\\.58894`, "u"));
-    assert.equal(formatUsageStatusline(report), `moonshot ${currency} 49.58894`);
   }
 });
 
@@ -293,7 +291,7 @@ test("Moonshot transport uses only its region endpoint and revalidates around th
       assert.equal(request?.init?.redirect, "error");
       assert.deepEqual(request?.init?.headers, {
         Authorization: "Bearer moonshot-test-secret",
-        "User-Agent": "pi-usage",
+        "User-Agent": "pi-provider-usage",
       });
     }
   } finally {

@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test, vi } from "vitest";
-import { createMockContext } from "../../../test/support.js";
+import { createMockContext } from "./support.js";
 import {
   formatUsageReport,
-  formatUsageStatusline,
   normalizeBasetenBillingUsagePayload,
   queryProviderUsage,
   type ResolvedUsageAuth,
@@ -78,7 +77,6 @@ test("Baseten billing reports only Model APIs gross, credits, and net spend", ()
   assert.match(formatted, /Spend window:\s+Last 30 days/u);
   assert.match(formatted, /Gross usage:\s+USD 171\.150000000000000001/u);
   assert.doesNotMatch(formatted, /1000\.00|500\.00/u);
-  assert.equal(formatUsageStatusline(report), "baseten USD 166.150000000000000001 net");
 });
 
 test("Baseten billing treats absent Model APIs usage as an empty provider report", () => {
@@ -86,7 +84,6 @@ test("Baseten billing treats absent Model APIs usage as an empty provider report
     const report = normalizeBasetenBillingUsagePayload(payload, 2_000);
     assert.deepEqual(report.metrics, []);
     assert.deepEqual(report.notes, ["Baseten returned no Model APIs usage for the last 30 days."]);
-    assert.equal(formatUsageStatusline(report), "baseten no Model APIs usage");
   }
 });
 
@@ -179,7 +176,7 @@ test("Baseten transport uses a trailing 30-day fixed management request", async 
     assert.equal(requests[0]?.init?.redirect, "error");
     assert.deepEqual(requests[0]?.init?.headers, {
       Authorization: "Bearer baseten-test-secret",
-      "User-Agent": "pi-usage",
+      "User-Agent": "pi-provider-usage",
     });
   } finally {
     nowMock.mockRestore();
