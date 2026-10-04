@@ -1,4 +1,4 @@
-# pi-provider-usage
+# @frostime/pi-provider-usage
 
 一个只负责查询 Provider 用量的 Pi 扩展，基于 [pi-usage](https://github.com/narumiruna/pi-extensions/tree/main/packages/pi-usage) 精简而来。
 
@@ -18,6 +18,12 @@
 - `all` 最多同时查询两个 Provider，分别显示结果；某个失败不影响其他结果。
 - 没有设置菜单、`/fast`、请求改写或额度兑换。
 - TUI 结果显示在对话区，作为不进入模型上下文的自定义条目保存。RPC 使用通知返回结果；不支持 print/JSON 模式。
+
+## 从 GitHub 安装
+
+```bash
+pi install git:github.com/frostime/pi-provider-usage
+```
 
 ## 本地加载
 
