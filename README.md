@@ -19,6 +19,12 @@
 - 没有设置菜单、`/fast`、请求改写或额度兑换。
 - TUI 结果显示在对话区，作为不进入模型上下文的自定义条目保存。RPC 使用通知返回结果；不支持 print/JSON 模式。
 
+## 从 npm 安装
+
+```bash
+pi install npm:@frostime/pi-provider-usage
+```
+
 ## 从 GitHub 安装
 
 ```bash

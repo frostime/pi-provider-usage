@@ -4,7 +4,10 @@
   "description": "A query-only Pi extension for provider usage, quotas, and balances.",
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/frostime/pi-provider-usage.git"
