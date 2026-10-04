@@ -1,5 +1,4 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
 import { abortError, awaitWithDeadline, errorMessage, redactUsageError, runWithConcurrency } from "./core.js";
 import { formatProviderStates } from "./format.js";
 import {
@@ -17,15 +16,12 @@ import {
   usageAdapters,
 } from "./query.js";
 import type { ProviderUsageState, ResolvedUsageAuth, UsageProviderAdapter } from "./types.js";
+import { openUsageOverlay } from "./usage-overlay.js";
 import { resolveUsageTarget } from "./usage-targets.js";
 
 const COMMAND = "provider-usage";
 const QUERY_TIMEOUT_MS = 15_000;
 const ALL_PROVIDER_CONCURRENCY = 2;
-
-interface UsageEntry {
-  text: string;
-}
 
 interface UsageExtensionDependencies {
   credentialReader?: StoredCredentialReader;
@@ -34,28 +30,23 @@ interface UsageExtensionDependencies {
 export default function providerUsageExtension(pi: ExtensionAPI, dependencies: UsageExtensionDependencies = {}) {
   const credentialCandidates = createOAuthCredentialCandidateReader(pi, dependencies.credentialReader);
   let completionContext: ExtensionContext | undefined;
-  let activeQuery: AbortController | undefined;
+  let activeView: { close(): void } | undefined;
 
-  // Custom entries are visible in the transcript but never included in model context.
-  pi.registerEntryRenderer<UsageEntry>(
-    COMMAND,
-    (entry) => new Text(entry.data?.text ?? "Usage report unavailable.", 0, 1),
-  );
-
-  const cancelQuery = () => {
-    activeQuery?.abort();
-    activeQuery = undefined;
+  const closeActiveView = () => {
+    const previous = activeView;
+    activeView = undefined;
+    previous?.close();
   };
   pi.on("session_start", (_event, ctx) => {
-    cancelQuery();
+    closeActiveView();
     completionContext = ctx;
   });
   pi.on("model_select", (_event, ctx) => {
-    cancelQuery();
+    closeActiveView();
     completionContext = ctx;
   });
   pi.on("session_shutdown", () => {
-    cancelQuery();
+    closeActiveView();
     completionContext = undefined;
   });
 
@@ -78,7 +69,6 @@ export default function providerUsageExtension(pi: ExtensionAPI, dependencies: U
         return;
       }
       completionContext = ctx;
-      cancelQuery();
       const argument = args.trim().toLowerCase();
       if (/\s/u.test(argument)) {
         ctx.ui.notify(`Usage: /${COMMAND} [provider|all]`, "warning");
@@ -106,54 +96,61 @@ export default function providerUsageExtension(pi: ExtensionAPI, dependencies: U
         adapters = [adapter];
       }
 
-      const controller = new AbortController();
-      activeQuery = controller;
+      closeActiveView();
       const sessionId = ctx.sessionManager.getSessionId();
       const modelId = modelIdentity(ctx);
-      const assertCurrent = () => {
-        if (
-          controller.signal.aborted ||
-          ctx.sessionManager.getSessionId() !== sessionId ||
-          modelIdentity(ctx) !== modelId
-        ) {
-          throw abortError();
-        }
-      };
-      try {
+      const query = async (signal: AbortSignal): Promise<ProviderUsageState[]> => {
+        const assertCurrent = () => {
+          if (signal.aborted || ctx.sessionManager.getSessionId() !== sessionId || modelIdentity(ctx) !== modelId) {
+            throw abortError();
+          }
+        };
+        assertCurrent();
+        // Refresh the configured set as well as credentials when the scope is all.
+        const currentAdapters = argument === "all" ? configuredAdapters(ctx) : adapters;
         const outcomes = await runWithConcurrency(
-          adapters,
+          currentAdapters,
           ALL_PROVIDER_CONCURRENCY,
           (adapter) =>
-            queryAdapter(
-              ctx,
-              adapter,
-              controller.signal,
-              assertCurrent,
-              dependencies.credentialReader,
-              credentialCandidates,
-            ),
-          controller.signal,
+            queryAdapter(ctx, adapter, signal, assertCurrent, dependencies.credentialReader, credentialCandidates),
+          signal,
         );
         assertCurrent();
-        const states = outcomes.map((outcome, index): ProviderUsageState => {
+        return outcomes.map((outcome, index): ProviderUsageState => {
           if (outcome.status === "fulfilled") return outcome.value;
           if (isStaleExtensionContextError(outcome.reason)) throw outcome.reason;
-          const adapter = adapters[index]!;
+          const adapter = currentAdapters[index]!;
           return {
             ...providerState(ctx, adapter),
             status: "query-failed",
             message: redactUsageError(errorMessage(outcome.reason)),
           };
         });
-        const text = formatProviderStates(states);
-        if (ctx.mode === "rpc") ctx.ui.notify(text, "info");
-        else pi.appendEntry<UsageEntry>(COMMAND, { text });
+      };
+
+      if (ctx.mode === "tui") {
+        const scope = argument === "all" ? "all" : commandArgument(adapters[0]!.id);
+        const view = openUsageOverlay(ctx, scope, query);
+        activeView = view;
+        // Do not keep the slash-command handler pending while the user keeps the panel open.
+        void view.closed.then(() => {
+          if (activeView === view) activeView = undefined;
+        });
+        return;
+      }
+
+      const controller = new AbortController();
+      const request = { close: () => controller.abort() };
+      activeView = request;
+      try {
+        const states = await query(controller.signal);
+        ctx.ui.notify(formatProviderStates(states), "info");
       } catch (error) {
         if (controller.signal.aborted || isStaleExtensionContextError(error) || isAbortError(error)) return;
         ctx.ui.notify(redactUsageError(errorMessage(error)), "error");
       } finally {
         controller.abort();
-        if (activeQuery === controller) activeQuery = undefined;
+        if (activeView === request) activeView = undefined;
       }
     },
   });

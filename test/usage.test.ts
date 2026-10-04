@@ -43,6 +43,7 @@ function setup(configured = ["openai-codex", "opencode-go"], provider = "openai-
     getApiKeyAndHeaders: async () => ({ ok: true, apiKey: key }),
   };
   const context = createMockContext({
+    mode: "rpc",
     model: models.find((model) => model.provider === provider),
     modelRegistry: registry,
   });
@@ -72,8 +73,8 @@ function stubUsageFetch() {
   return fetch;
 }
 
-function output(mock: ReturnType<typeof createMockPi>): string {
-  return mock.entries.map((entry) => entry.data.text).join("\n");
+function output(context: ReturnType<typeof createMockContext>): string {
+  return context.notifications.map((item) => item.message).join("\n");
 }
 
 afterEach(() => {
@@ -105,7 +106,7 @@ test("completion exposes configured providers and all, and follows runtime confi
   assert.equal(complete(""), undefined);
 });
 
-test("no argument queries only current provider; results are entries, not model messages", async () => {
+test("no argument queries only current provider without creating session entries or model messages", async () => {
   const s = setup();
   const fetch = stubUsageFetch();
   await s.command.handler("", s.ctx);
@@ -113,11 +114,10 @@ test("no argument queries only current provider; results are entries, not model 
   assert.match(output(s), /OpenAI Codex Usage · Current/);
   assert.match(output(s), /70%/);
   assert.doesNotMatch(output(s), /OpenCode|synthetic-/);
-  assert.equal(s.entries[0]?.customType, "provider-usage");
+  assert.deepEqual(s.entries, []);
   assert.deepEqual(s.sentMessages, []);
   assert.deepEqual(s.sentUserMessages, []);
-  const renderer = s.entryRenderers.get("provider-usage")!;
-  assert.match(renderer({ data: s.entries[0]!.data }).render(100).join("\n"), /OpenAI Codex/);
+  assert.equal(s.entryRenderers.size, 0);
 });
 
 test("explicit cross-provider query does not change model, and codex alias and canonical ID both work", async () => {

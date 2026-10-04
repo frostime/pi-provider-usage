@@ -31,7 +31,7 @@ test("Pi loads this standalone package directly and runs provider-usage through 
     assert.equal(loaded.extensions.length, 1);
     const extension = loaded.extensions[0]!;
     assert.deepEqual([...extension.commands.keys()], ["provider-usage"]);
-    assert.ok(extension.entryRenderers.has("provider-usage"));
+    assert.equal(extension.entryRenderers.size, 0);
     assert.ok(!extension.handlers.has("before_provider_request"));
 
     const model = {
