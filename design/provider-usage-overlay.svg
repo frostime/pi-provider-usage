@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1020" viewBox="0 0 1440 1020" role="img" aria-labelledby="title description">
+  <title id="title">Provider usage：右侧非抢焦点浮层原型</title>
+  <desc id="description">静态布局原型，所有用量数据均为示例。主会话正在 streaming，主编辑器保留键盘焦点。右侧浮层展示 Codex、OpenCode Go 和一个失败的 Copilot 查询，标明快照时间。Ctrl Alt R 手动刷新，Ctrl Alt Q 关闭，Ctrl Alt 上下键滚动。浮层不写入会话记录。</desc>
+  <defs>
+    <style>
+      text { font-family: "Cascadia Code", Consolas, "Noto Sans Mono CJK SC", "Microsoft YaHei", monospace; }
+      .page-title { font-size: 23px; font-weight: 600; fill: #e7edf5; }
+      .body { font-size: 16px; fill: #c1ccd9; }
+      .small { font-size: 13px; fill: #8998ab; }
+      .dim { fill: #76859a; }
+      .accent { fill: #86c7ed; }
+      .green { fill: #97cdaa; }
+      .amber { fill: #e3ba7c; }
+      .panel-title { font-size: 17px; font-weight: 600; fill: #edf3fb; }
+      .provider { font-size: 16px; font-weight: 600; fill: #dce6f3; }
+      .value { font-size: 14px; fill: #d1dfed; }
+      .key { font-size: 13px; fill: #a7d0ee; }
+      .line { stroke: #344052; stroke-width: 1; }
+    </style>
+    <clipPath id="terminal-content"><rect x="52" y="150" width="1336" height="592"/></clipPath>
+  </defs>
+
+  <!-- Outside the mock terminal: review labels, not proposed application chrome. -->
+  <rect width="1440" height="1020" fill="#0c1118"/>
+  <text x="36" y="40" class="page-title">Provider usage · 非抢焦点浮层</text>
+  <text x="36" y="65" class="small">布局原型 / 示例数据　·　只评审展示方式，不代表已经实现</text>
+  <text x="1404" y="42" text-anchor="end" class="small accent">主任务继续运行 · 查询结果不落盘</text>
+
+  <!-- Recognizable, deliberately schematic Pi session context. -->
+  <rect x="32" y="90" width="1376" height="834" rx="7" fill="#121923" stroke="#354256"/>
+  <path d="M39 90 H1401 Q1408 90 1408 97 V132 H32 V97 Q32 90 39 90" fill="#1b2532"/>
+  <circle cx="53" cy="111" r="5" fill="#778292"/>
+  <circle cx="70" cy="111" r="5" fill="#778292"/>
+  <circle cx="87" cy="111" r="5" fill="#778292"/>
+  <text x="112" y="116" class="small">Pi · pi-provider-usage</text>
+  <text x="1385" y="116" text-anchor="end" class="small">openai-codex · high</text>
+
+  <g clip-path="url(#terminal-content)">
+    <text x="62" y="171" class="small dim">~/PlayCode/pi-provider-usage</text>
+    <text x="62" y="211" class="body accent">You</text>
+    <text x="62" y="240" class="body">检查各 Provider 的认证与用量查询逻辑，说明需要注意的边界。</text>
+    <line x1="62" y1="263" x2="1384" y2="263" stroke="#283546"/>
+
+    <text x="62" y="295" class="body green">Assistant</text>
+    <text x="62" y="328" class="body">我会先检查认证解析，再核对各 Provider 的接口与结果格式。</text>
+    <text x="62" y="362" class="body">目前已经确认，查询其他 Provider 不应改变当前模型，也不能混用计费语义。</text>
+    <text x="62" y="409" class="body">1. 当前模型认证与 Provider 默认认证需要分别校验。</text>
+    <text x="62" y="443" class="body">2. 自定义地址的凭证不能转发到官方用量接口。</text>
+    <text x="62" y="477" class="body">3. 某个 Provider 的失败不应覆盖其他 Provider 的成功结果。</text>
+
+    <rect x="62" y="512" width="1225" height="134" fill="#17202b"/>
+    <text x="80" y="540" class="small dim">正在检查 src/query.ts</text>
+    <text x="80" y="575" class="body">const auth = await resolveUsageAuth(ctx, adapter);</text>
+    <text x="80" y="605" class="body">await guard(); // 请求前重新确认认证没有变化</text>
+    <text x="62" y="687" class="body">接下来我会继续核对多账号发现与取消查询的处理</text>
+    <circle cx="69" cy="726" r="4" fill="#86c7ed"/>
+    <text x="83" y="731" class="small accent">正在 streaming…</text>
+  </g>
+
+  <!-- An opaque overlay, not a resized or partitioned main session. -->
+  <rect x="874" y="171" width="514" height="597" fill="#1b2532" stroke="#6c8ba9" stroke-width="1.5"/>
+  <text x="896" y="201" class="panel-title">Provider usage / all</text>
+  <text x="1366" y="200" text-anchor="end" class="small dim">3 providers</text>
+  <text x="896" y="227" class="small">快照 · 12:34:56 · 不自动刷新</text>
+  <line x1="896" y1="244" x2="1366" y2="244" class="line"/>
+
+  <text x="896" y="274" class="provider">OpenAI Codex</text>
+  <text x="1366" y="274" text-anchor="end" class="small accent">Current</text>
+  <text x="896" y="298" class="small dim">ChatGPT subscription limits</text>
+  <text x="896" y="325" class="value">5h</text>
+  <text x="966" y="325" class="value green">██████████████░░░░░░</text>
+  <text x="1366" y="325" text-anchor="end" class="value">70% left</text>
+  <text x="966" y="346" class="small dim">Resets in 2h 30m</text>
+  <text x="896" y="374" class="value">Weekly</text>
+  <text x="966" y="374" class="value amber">████░░░░░░░░░░░░░░░░</text>
+  <text x="1366" y="374" text-anchor="end" class="value">20% left</text>
+  <text x="966" y="395" class="small dim">Resets in 3d 12h</text>
+  <line x1="896" y1="412" x2="1366" y2="412" class="line"/>
+
+  <text x="896" y="442" class="provider">OpenCode Go</text>
+  <text x="1366" y="442" text-anchor="end" class="small dim">Configured</text>
+  <text x="896" y="469" class="value">Rolling</text>
+  <text x="986" y="469" class="value green">████████████░░░░░░░░</text>
+  <text x="1366" y="469" text-anchor="end" class="value">60% left</text>
+  <text x="986" y="490" class="small dim">Resets in 1h 20m</text>
+  <text x="896" y="518" class="value">Weekly</text>
+  <text x="986" y="518" class="value green">██████████████████░░</text>
+  <text x="1366" y="518" text-anchor="end" class="value">90% left</text>
+  <text x="896" y="550" class="value">Monthly</text>
+  <text x="986" y="550" class="value green">███████████████░░░░░</text>
+  <text x="1366" y="550" text-anchor="end" class="value">75% left</text>
+  <line x1="896" y1="568" x2="1366" y2="568" class="line"/>
+
+  <text x="896" y="597" class="provider">GitHub Copilot</text>
+  <text x="1366" y="597" text-anchor="end" class="small dim">Configured</text>
+  <text x="896" y="623" class="value amber">Query failed · 503 Service Unavailable</text>
+  <text x="896" y="644" class="small dim">其他 Provider 的结果不受影响</text>
+
+  <line x1="896" y1="666" x2="1366" y2="666" class="line"/>
+  <text x="896" y="690" class="key">Ctrl+Alt+R</text>
+  <text x="992" y="690" class="small">刷新</text>
+  <text x="1142" y="690" class="key">Ctrl+Alt+Q</text>
+  <text x="1242" y="690" class="small">关闭</text>
+  <text x="896" y="715" class="key">Ctrl+Alt+↑/↓</text>
+  <text x="1016" y="715" class="small">滚动长结果</text>
+  <text x="896" y="746" class="small dim">不抢键盘焦点 · 普通输入仍交给主编辑器</text>
+
+  <!-- Main editor stays below the overlay and owns the only input cursor. -->
+  <rect x="60" y="791" width="1320" height="88" fill="#151f2b" stroke="#86c7ed" stroke-width="1.5"/>
+  <text x="77" y="815" class="small accent">主编辑器 · 保持键盘焦点</text>
+  <text x="77" y="850" class="body">❯ 继续检查各 Provider 的认证匹配<tspan class="accent">▌</tspan></text>
+  <text x="61" y="903" class="small dim">主 session 仍在运行　·　你的输入不会被浮层接管</text>
+
+  <text x="36" y="966" class="body">临时展示，不新增会话条目；关闭浮层后，主界面恢复原样。</text>
+  <text x="36" y="995" class="small">评审重点：右侧位置与遮挡范围、编辑器焦点、信息密度、快照与退出提示。</text>
+</svg>
