@@ -1,6 +1,6 @@
 {
   "name": "@frostime/pi-provider-usage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A query-only Pi extension for provider usage, quotas, and balances.",
   "type": "module",
   "license": "MIT",
