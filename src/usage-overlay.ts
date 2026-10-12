@@ -7,12 +7,22 @@ import type { ProviderUsageState } from "./types.js";
 
 const OVERLAY_HOST_KEY = "frostime.provider-usage.overlay";
 
+/** Queries one usage scope; called on open, on retarget, and on manual refresh. */
+export type UsageQuery = (signal: AbortSignal) => Promise<readonly ProviderUsageState[]>;
+
+export interface UsageOverlayView {
+  readonly closed: Promise<void>;
+  close(): void;
+  /** Show another scope in this same panel and query it immediately. */
+  retarget(scope: string, query: UsageQuery): void;
+}
+
 /** Opens a query-only, non-capturing snapshot panel without awaiting its query or dismissal. */
 export function openUsageOverlay(
   ctx: ExtensionContext,
   scope: string,
-  query: (signal: AbortSignal) => Promise<readonly ProviderUsageState[]>,
-): { closed: Promise<void>; close(): void } {
+  query: UsageQuery,
+): UsageOverlayView {
   const panel = new UsageOverlay(ctx, scope, query);
   // Pi 1.0.2's custom-dialog completion removes the stack's top overlay, not its own.
   // A zero-height widget supplies the supported TUI/lifecycle hook without changing editor
@@ -25,10 +35,10 @@ export function openUsageOverlay(
     throw error;
   }
   void panel.refresh();
-  return { closed: panel.closed, close: () => panel.close() };
+  return { closed: panel.closed, close: () => panel.close(), retarget: (scope, query) => panel.retarget(scope, query) };
 }
 
-class UsageOverlay implements Component {
+class UsageOverlay implements Component, UsageOverlayView {
   private tui?: TUI;
   readonly closed: Promise<void>;
   private resolveClosed!: () => void;
@@ -43,8 +53,8 @@ class UsageOverlay implements Component {
 
   constructor(
     private readonly ctx: ExtensionContext,
-    private readonly scope: string,
-    private readonly query: (signal: AbortSignal) => Promise<readonly ProviderUsageState[]>,
+    private scope: string,
+    private query: UsageQuery,
   ) {
     this.closed = new Promise((resolve) => {
       this.resolveClosed = resolve;
@@ -84,6 +94,13 @@ class UsageOverlay implements Component {
       else return;
       return { consume: true };
     });
+  }
+
+  retarget(scope: string, query: UsageQuery): void {
+    if (this.isClosed) return;
+    this.scope = scope;
+    this.query = query;
+    void this.refresh();
   }
 
   async refresh(): Promise<void> {

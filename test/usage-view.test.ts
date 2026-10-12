@@ -38,7 +38,7 @@ function setup() {
   return {
     ...context,
     ...mock,
-    command: mock.commands.get("provider-usage")!,
+    command: mock.commands.get("provider-usage:overlay")!,
     rotateKey() {
       key = "synthetic-next-key";
     },
@@ -149,7 +149,7 @@ test("refreshing all rechecks configured providers instead of keeping the origin
   s.input(CLOSE);
 });
 
-test("new commands and model/session changes close the old view and remove scoped controls", async () => {
+test("session and model changes close the view and remove scoped controls", async () => {
   for (const event of ["model_select", "session_start", "session_shutdown"]) {
     const s = setup();
     vi.stubGlobal(
@@ -158,16 +158,60 @@ test("new commands and model/session changes close the old view and remove scope
     );
     await s.command.handler("codex", s.ctx);
     await vi.waitFor(() => assert.match(output(s), /70%/));
-    await s.command.handler("codex", s.ctx);
-    await vi.waitFor(() => assert.match(output(s), /70%/));
-    assert.equal(s.overlays.length, 2);
-    assert.equal(s.overlays[0]!.closed, true);
-    assert.equal(s.overlays[1]!.closed, false);
+    assert.equal(s.overlays.length, 1);
     assert.equal(s.terminalInputHandlers.size, 1);
     await emit(s, event, s.ctx);
-    await vi.waitFor(() => assert.equal(s.overlays[1]!.closed, true));
+    await vi.waitFor(() => assert.equal(s.overlays[0]!.closed, true));
     assert.equal(s.terminalInputHandlers.size, 0);
     assert.equal(s.widgets.size, 0);
     assert.deepEqual(s.entries, []);
   }
+});
+
+test("rerunning the command refreshes the open panel instead of stacking windows", async () => {
+  const s = setup();
+  const fetch = vi.fn(async () => report(30));
+  vi.stubGlobal("fetch", fetch);
+  await s.command.handler("codex", s.ctx);
+  await vi.waitFor(() => assert.match(output(s), /70%/));
+  await s.command.handler("codex", s.ctx);
+  await vi.waitFor(() => assert.equal(fetch.mock.calls.length, 2));
+  assert.equal(s.overlays.length, 1);
+  assert.equal(s.overlays[0]!.closed, false);
+  assert.equal(s.terminalInputHandlers.size, 1);
+  s.input(CLOSE);
+});
+
+test("another scope retargets the same panel and close dismisses it without a query", async () => {
+  const s = setup();
+  const fetch = vi.fn(async () => report(30));
+  vi.stubGlobal("fetch", fetch);
+  await s.command.handler("codex", s.ctx);
+  await vi.waitFor(() => assert.equal(fetch.mock.calls.length, 1));
+  assert.match(output(s), /Provider usage \/ codex/);
+  await s.command.handler("all", s.ctx);
+  await vi.waitFor(() => assert.equal(fetch.mock.calls.length, 2));
+  await vi.waitFor(() => assert.match(output(s), /Provider usage \/ all/));
+  assert.equal(s.overlays.length, 1);
+  assert.equal(s.overlays[0]!.closed, false);
+
+  await s.command.handler("close", s.ctx);
+  assert.equal(s.overlays[0]!.closed, true);
+  assert.equal(s.widgets.size, 0);
+  assert.equal(s.terminalInputHandlers.size, 0);
+
+  s.notifications.length = 0;
+  await s.command.handler("close", s.ctx);
+  assert.equal(fetch.mock.calls.length, 2);
+  assert.match(s.notifications[0]!.message, /No provider usage overlay is open/);
+});
+
+test("close is accepted as an argument, not as a provider", async () => {
+  const s = setup();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => report(30)),
+  );
+  await s.command.handler("close codex", s.ctx);
+  assert.match(s.notifications[0]!.message, /Usage: \/provider-usage:overlay/);
 });

@@ -16,10 +16,13 @@ import {
   usageAdapters,
 } from "./query.js";
 import type { ProviderUsageState, ResolvedUsageAuth, UsageProviderAdapter } from "./types.js";
-import { openUsageOverlay } from "./usage-overlay.js";
+import { openUsageOverlay, type UsageOverlayView } from "./usage-overlay.js";
 import { resolveUsageTarget } from "./usage-targets.js";
 
-const COMMAND = "provider-usage";
+const PRINT_COMMAND = "provider-usage:print";
+const OVERLAY_COMMAND = "provider-usage:overlay";
+const ALL_ARGUMENT = "all";
+const CLOSE_ARGUMENT = "close";
 const QUERY_TIMEOUT_MS = 15_000;
 const ALL_PROVIDER_CONCURRENCY = 2;
 
@@ -27,133 +30,201 @@ interface UsageExtensionDependencies {
   credentialReader?: StoredCredentialReader;
 }
 
-export default function providerUsageExtension(pi: ExtensionAPI, dependencies: UsageExtensionDependencies = {}) {
+/** A resolved command argument: which providers to query, and how the scope is labelled. */
+interface UsageScope {
+  label: string;
+  adapters: readonly UsageProviderAdapter[];
+  /** The `all` scope re-checks which providers are configured on every query. */
+  recheckConfigured: boolean;
+}
+
+/** Either a scope to query, or a message that ends the command without a request. */
+type UsageArgument =
+  | { kind: "scope"; scope: UsageScope }
+  | { kind: "notice"; message: string; level: "info" | "warning" };
+
+export default function providerUsageExtension(
+  pi: ExtensionAPI,
+  dependencies: UsageExtensionDependencies = {},
+) {
   const credentialCandidates = createOAuthCredentialCandidateReader(pi, dependencies.credentialReader);
   let completionContext: ExtensionContext | undefined;
-  let activeView: { close(): void } | undefined;
+  let overlay: UsageOverlayView | undefined;
+  let pendingPrint: AbortController | undefined;
 
-  const closeActiveView = () => {
-    const previous = activeView;
-    activeView = undefined;
+  const cancelActiveWork = () => {
+    const previous = overlay;
+    const printing = pendingPrint;
+    overlay = undefined;
+    pendingPrint = undefined;
     previous?.close();
+    printing?.abort();
   };
   pi.on("session_start", (_event, ctx) => {
-    closeActiveView();
+    cancelActiveWork();
     completionContext = ctx;
   });
   pi.on("model_select", (_event, ctx) => {
-    closeActiveView();
+    cancelActiveWork();
     completionContext = ctx;
   });
   pi.on("session_shutdown", () => {
-    closeActiveView();
+    cancelActiveWork();
     completionContext = undefined;
   });
 
-  pi.registerCommand(COMMAND, {
-    description: "Show provider usage: current provider, a provider ID, or all",
-    getArgumentCompletions: (prefix) => {
-      if (!completionContext) return null;
-      const candidates = configuredAdapters(completionContext).map((adapter) => ({
-        value: commandArgument(adapter.id),
-        label: commandArgument(adapter.id),
-        description: adapter.displayName,
-      }));
-      candidates.push({ value: "all", label: "all", description: "All configured providers" });
-      const matches = candidates.filter((item) => item.value.startsWith(prefix.toLowerCase()));
-      return matches.length > 0 ? matches : null;
-    },
+  /** Builds a query that stays valid only while this session and model remain current. */
+  const createQuery = (ctx: ExtensionContext, scope: UsageScope) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    const modelId = modelIdentity(ctx);
+    return async (signal: AbortSignal): Promise<ProviderUsageState[]> => {
+      const assertCurrent = () => {
+        if (signal.aborted || ctx.sessionManager.getSessionId() !== sessionId || modelIdentity(ctx) !== modelId) {
+          throw abortError();
+        }
+      };
+      assertCurrent();
+      const adapters = scope.recheckConfigured ? configuredAdapters(ctx) : scope.adapters;
+      const outcomes = await runWithConcurrency(
+        adapters,
+        ALL_PROVIDER_CONCURRENCY,
+        (adapter) =>
+          queryAdapter(ctx, adapter, signal, assertCurrent, dependencies.credentialReader, credentialCandidates),
+        signal,
+      );
+      assertCurrent();
+      return outcomes.map((outcome, index): ProviderUsageState => {
+        if (outcome.status === "fulfilled") return outcome.value;
+        if (isStaleExtensionContextError(outcome.reason)) throw outcome.reason;
+        const adapter = adapters[index]!;
+        return {
+          ...providerState(ctx, adapter),
+          status: "query-failed",
+          message: redactUsageError(errorMessage(outcome.reason)),
+        };
+      });
+    };
+  };
+
+  const completeArguments = (prefix: string, includeClose: boolean) => {
+    if (!completionContext) return null;
+    const candidates = configuredAdapters(completionContext).map((adapter) => ({
+      value: commandArgument(adapter.id),
+      label: commandArgument(adapter.id),
+      description: adapter.displayName,
+    }));
+    candidates.push({ value: ALL_ARGUMENT, label: ALL_ARGUMENT, description: "All configured providers" });
+    if (includeClose) {
+      candidates.push({ value: CLOSE_ARGUMENT, label: CLOSE_ARGUMENT, description: "Close the overlay" });
+    }
+    const matches = candidates.filter((item) => item.value.startsWith(prefix.toLowerCase()));
+    return matches.length > 0 ? matches : null;
+  };
+
+  pi.registerCommand(PRINT_COMMAND, {
+    description: "Print usage of the current Provider, one Provider, or all",
+    getArgumentCompletions: (prefix) => completeArguments(prefix, false),
     handler: async (args, ctx) => {
       if (ctx.mode !== "tui" && ctx.mode !== "rpc") {
-        ctx.ui.notify(`/${COMMAND} requires TUI or RPC mode.`, "warning");
+        ctx.ui.notify(`/${PRINT_COMMAND} requires TUI or RPC mode.`, "warning");
         return;
       }
       completionContext = ctx;
-      const argument = args.trim().toLowerCase();
-      if (/\s/u.test(argument)) {
-        ctx.ui.notify(`Usage: /${COMMAND} [provider|all]`, "warning");
-        return;
-      }
-      let adapters: readonly UsageProviderAdapter[];
-      if (argument === "all") {
-        adapters = configuredAdapters(ctx);
-        if (adapters.length === 0) {
-          ctx.ui.notify("No supported provider has configured authentication.", "info");
-          return;
-        }
-      } else {
-        const providerId = argument === "codex" ? "openai-codex" : argument || ctx.model?.provider;
-        const adapter = adapterForProvider(providerId);
-        if (!adapter) {
-          ctx.ui.notify(
-            providerId
-              ? `Usage reporting is not supported for ${redactUsageError(providerId)}. Use /${COMMAND} all or choose a provider from completion.`
-              : "No model is selected. Specify a provider or all.",
-            "warning",
-          );
-          return;
-        }
-        adapters = [adapter];
-      }
-
-      closeActiveView();
-      const sessionId = ctx.sessionManager.getSessionId();
-      const modelId = modelIdentity(ctx);
-      const query = async (signal: AbortSignal): Promise<ProviderUsageState[]> => {
-        const assertCurrent = () => {
-          if (signal.aborted || ctx.sessionManager.getSessionId() !== sessionId || modelIdentity(ctx) !== modelId) {
-            throw abortError();
-          }
-        };
-        assertCurrent();
-        // Refresh the configured set as well as credentials when the scope is all.
-        const currentAdapters = argument === "all" ? configuredAdapters(ctx) : adapters;
-        const outcomes = await runWithConcurrency(
-          currentAdapters,
-          ALL_PROVIDER_CONCURRENCY,
-          (adapter) =>
-            queryAdapter(ctx, adapter, signal, assertCurrent, dependencies.credentialReader, credentialCandidates),
-          signal,
-        );
-        assertCurrent();
-        return outcomes.map((outcome, index): ProviderUsageState => {
-          if (outcome.status === "fulfilled") return outcome.value;
-          if (isStaleExtensionContextError(outcome.reason)) throw outcome.reason;
-          const adapter = currentAdapters[index]!;
-          return {
-            ...providerState(ctx, adapter),
-            status: "query-failed",
-            message: redactUsageError(errorMessage(outcome.reason)),
-          };
-        });
-      };
-
-      if (ctx.mode === "tui") {
-        const scope = argument === "all" ? "all" : commandArgument(adapters[0]!.id);
-        const view = openUsageOverlay(ctx, scope, query);
-        activeView = view;
-        // Do not keep the slash-command handler pending while the user keeps the panel open.
-        void view.closed.then(() => {
-          if (activeView === view) activeView = undefined;
-        });
+      const argument = parseUsageArgument(PRINT_COMMAND, ctx, args);
+      if (argument.kind === "notice") {
+        ctx.ui.notify(argument.message, argument.level);
         return;
       }
 
       const controller = new AbortController();
-      const request = { close: () => controller.abort() };
-      activeView = request;
+      // A later query supersedes an in-flight print, as the overlay refresh does.
+      pendingPrint?.abort();
+      pendingPrint = controller;
       try {
-        const states = await query(controller.signal);
+        const states = await createQuery(ctx, argument.scope)(controller.signal);
         ctx.ui.notify(formatProviderStates(states), "info");
       } catch (error) {
         if (controller.signal.aborted || isStaleExtensionContextError(error) || isAbortError(error)) return;
         ctx.ui.notify(redactUsageError(errorMessage(error)), "error");
       } finally {
         controller.abort();
-        if (activeView === request) activeView = undefined;
+        if (pendingPrint === controller) pendingPrint = undefined;
       }
     },
   });
+
+  pi.registerCommand(OVERLAY_COMMAND, {
+    description: "Show or refresh the usage overlay for the current Provider, one Provider, or all; `close` hides it",
+    getArgumentCompletions: (prefix) => completeArguments(prefix, true),
+    handler: async (args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify(`/${OVERLAY_COMMAND} requires TUI mode.`, "warning");
+        return;
+      }
+      completionContext = ctx;
+      const argument = args.trim().toLowerCase();
+      if (argument === CLOSE_ARGUMENT) {
+        if (!overlay) {
+          ctx.ui.notify("No provider usage overlay is open.", "info");
+          return;
+        }
+        overlay.close();
+        overlay = undefined;
+        return;
+      }
+
+      const parsed = parseUsageArgument(OVERLAY_COMMAND, ctx, argument);
+      if (parsed.kind === "notice") {
+        ctx.ui.notify(parsed.message, parsed.level);
+        return;
+      }
+      const query = createQuery(ctx, parsed.scope);
+      if (overlay) {
+        overlay.retarget(parsed.scope.label, query);
+        return;
+      }
+      const view = openUsageOverlay(ctx, parsed.scope.label, query);
+      overlay = view;
+      // Do not keep the slash-command handler pending while the user keeps the panel open.
+      void view.closed.then(() => {
+        if (overlay === view) overlay = undefined;
+      });
+    },
+  });
+}
+
+function parseUsageArgument(command: string, ctx: ExtensionContext, args: string | undefined): UsageArgument {
+  const argument = (args ?? "").trim().toLowerCase();
+  if (/\s/u.test(argument)) {
+    return { kind: "notice", message: `Usage: /${command} [provider|${ALL_ARGUMENT}]`, level: "warning" };
+  }
+  if (argument === ALL_ARGUMENT) {
+    const adapters = configuredAdapters(ctx);
+    if (adapters.length === 0) {
+      return {
+        kind: "notice",
+        message: "No supported provider has configured authentication.",
+        level: "info",
+      };
+    }
+    return { kind: "scope", scope: { label: ALL_ARGUMENT, adapters, recheckConfigured: true } };
+  }
+
+  const providerId = argument === "codex" ? "openai-codex" : argument || ctx.model?.provider;
+  const adapter = adapterForProvider(providerId);
+  if (!adapter) {
+    return {
+      kind: "notice",
+      level: "warning",
+      message: providerId
+        ? `Usage reporting is not supported for ${redactUsageError(providerId)}. Use /${command} ${ALL_ARGUMENT} or choose a provider from completion.`
+        : `No model is selected. Specify a provider or ${ALL_ARGUMENT}.`,
+    };
+  }
+  return {
+    kind: "scope",
+    scope: { label: commandArgument(adapter.id), adapters: [adapter], recheckConfigured: false },
+  };
 }
 
 function configuredAdapters(ctx: ExtensionContext): UsageProviderAdapter[] {

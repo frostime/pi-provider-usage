@@ -30,7 +30,7 @@ test("Pi loads this standalone package directly and runs provider-usage through 
     assert.deepEqual(loaded.errors, []);
     assert.equal(loaded.extensions.length, 1);
     const extension = loaded.extensions[0]!;
-    assert.deepEqual([...extension.commands.keys()], ["provider-usage"]);
+    assert.deepEqual([...extension.commands.keys()], ["provider-usage:print", "provider-usage:overlay"]);
     assert.equal(extension.entryRenderers.size, 0);
     assert.ok(!extension.handlers.has("before_provider_request"));
 
@@ -55,7 +55,7 @@ test("Pi loads this standalone package directly and runs provider-usage through 
       return Response.json({ usage: { rolling: { status: "ok", percent: 25 } } });
     });
     vi.stubGlobal("fetch", fetch);
-    await extension.commands.get("provider-usage")!.handler("", context.ctx);
+    await extension.commands.get("provider-usage:print")!.handler("", context.ctx);
     assert.match(context.notifications[0]!.message, /OpenCode Go Usage · Current/);
     assert.match(context.notifications[0]!.message, /75%/);
     assert.equal(fetch.mock.calls.length, 1);

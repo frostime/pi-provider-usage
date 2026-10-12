@@ -50,11 +50,13 @@ function setup(configured = ["openai-codex", "opencode-go"], provider = "openai-
   const mock = createMockPi();
   // Never consult real credentials during tests.
   usageExtension(mock.pi, { credentialReader: () => undefined });
-  const command = mock.commands.get("provider-usage")!;
+  const command = mock.commands.get("provider-usage:print")!;
+  const overlayCommand = mock.commands.get("provider-usage:overlay")!;
   return {
     ...context,
     ...mock,
     command,
+    overlayCommand,
     available,
     registry,
     rotateKey: () => {
@@ -82,10 +84,10 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-test("registers only the query command, with no startup queries, statusline, or request rewriting", async () => {
+test("registers only the print and overlay commands, with no startup queries, statusline, or request rewriting", async () => {
   const s = setup();
   const fetch = stubUsageFetch();
-  assert.deepEqual([...s.commands.keys()], ["provider-usage"]);
+  assert.deepEqual([...s.commands.keys()], ["provider-usage:print", "provider-usage:overlay"]);
   for (const event of ["session_start", "model_select", "turn_start"]) await emit(s, event, s.ctx);
   assert.equal(fetch.mock.calls.length, 0);
   assert.deepEqual([...s.statuses], []);
@@ -106,6 +108,15 @@ test("completion exposes configured providers and all, and follows runtime confi
   assert.equal(complete(""), undefined);
 });
 
+test("overlay completion offers close in addition to providers and all", async () => {
+  const s = setup();
+  await emit(s, "session_start", s.ctx);
+  assert.deepEqual(
+    s.overlayCommand.getArgumentCompletions!("")?.map((item: any) => item.value),
+    ["codex", "opencode-go", "all", "close"],
+  );
+});
+
 test("no argument queries only current provider without creating session entries or model messages", async () => {
   const s = setup();
   const fetch = stubUsageFetch();
@@ -118,6 +129,16 @@ test("no argument queries only current provider without creating session entries
   assert.deepEqual(s.sentMessages, []);
   assert.deepEqual(s.sentUserMessages, []);
   assert.equal(s.entryRenderers.size, 0);
+});
+
+test("print reports through a notification without opening an overlay", async () => {
+  const s = setup();
+  stubUsageFetch();
+  const tui = createMockContext({ mode: "tui", model: s.ctx.model, modelRegistry: s.registry });
+  await s.command.handler("codex", tui.ctx);
+  assert.equal(tui.overlays.length, 0);
+  assert.equal(tui.widgets.size, 0);
+  assert.match(tui.notifications[0]!.message, /OpenAI Codex Usage · Current/);
 });
 
 test("explicit cross-provider query does not change model, and codex alias and canonical ID both work", async () => {
@@ -159,20 +180,26 @@ test("invalid arguments and unsupported current providers perform no network req
   await s.command.handler("", unsupported.ctx);
   assert.equal(fetch.mock.calls.length, 0);
   assert.equal(s.entries.length, 0);
-  assert.match(s.notifications[0]!.message, /Usage: \/provider-usage/);
+  assert.match(s.notifications[0]!.message, /Usage: \/provider-usage:print/);
   assert.match(unsupported.notifications[0]!.message, /not supported/);
 });
 
-test("empty provider configuration and print/JSON modes do not query or publish results", async () => {
+test("empty provider configuration and non-interactive modes do not query or publish results", async () => {
   const s = setup([]);
   const fetch = stubUsageFetch();
-  const empty = createMockContext({ modelRegistry: s.registry });
+  const empty = createMockContext({ mode: "rpc", modelRegistry: s.registry });
   await s.command.handler("all", empty.ctx);
   assert.match(empty.notifications[0]!.message, /No supported provider/);
+  const emptyOverlay = createMockContext({ mode: "tui", modelRegistry: s.registry });
+  await s.overlayCommand.handler("all", emptyOverlay.ctx);
+  assert.match(emptyOverlay.notifications[0]!.message, /No supported provider/);
+  assert.equal(emptyOverlay.overlays.length, 0);
   for (const mode of ["print", "json"]) {
     const context = createMockContext({ mode, model: s.ctx.model, modelRegistry: s.registry });
     await s.command.handler("codex", context.ctx);
     assert.match(context.notifications[0]!.message, /requires TUI or RPC/);
+    await s.overlayCommand.handler("codex", context.ctx);
+    assert.match(context.notifications[1]!.message, /requires TUI mode/);
   }
   assert.equal(fetch.mock.calls.length, 0);
   assert.deepEqual(s.entries, []);
@@ -189,6 +216,30 @@ test("repeated manual queries fetch fresh data rather than serving an account ca
     (fetch.mock.calls[1]![1].headers as Record<string, string>).Authorization,
     "Bearer synthetic-rotated-key",
   );
+});
+
+test("a second print cancels an earlier pending print", async () => {
+  const s = setup();
+  let firstSignal: AbortSignal | undefined;
+  const fetch = vi.fn(async (_url: string, options: RequestInit) => {
+    if (!firstSignal) {
+      firstSignal = options.signal!;
+      return new Promise<Response>((_resolve, reject) =>
+        firstSignal!.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), {
+          once: true,
+        }),
+      );
+    }
+    return Response.json(codexPayload);
+  });
+  vi.stubGlobal("fetch", fetch);
+  const firstRun = s.command.handler("codex", s.ctx);
+  await vi.waitFor(() => assert.equal(fetch.mock.calls.length, 1));
+  await s.command.handler("codex", s.ctx);
+  assert.equal(firstSignal.aborted, true);
+  await firstRun;
+  assert.equal(s.notifications.length, 1);
+  assert.match(output(s), /OpenAI Codex Usage/);
 });
 
 test("multiple billing accounts require selection without querying or aggregating them", async () => {

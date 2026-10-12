@@ -46,7 +46,7 @@ test("real Pi native OAuth reports authentication and a usage link without backe
   const mock = createMockPi();
   usageExtension(mock.pi, { credentialReader: () => credential });
   const { ctx, notifications } = createMockContext({ mode: "rpc", model, modelRegistry: registry });
-  await mock.commands.get("provider-usage")!.handler("", ctx);
+  await mock.commands.get("provider-usage:print")!.handler("", ctx);
   const text = notifications[0]?.message ?? "";
   assert.match(text, /Connected \(native OAuth\)/);
   assert.match(text, /https:\/\/chatgpt.com\/settings\/usage/);
@@ -60,7 +60,7 @@ test("real Pi without credentials reports auth unavailable rather than API-key u
   const mock = createMockPi();
   usageExtension(mock.pi, { credentialReader: () => undefined });
   const { ctx, notifications } = createMockContext({ mode: "rpc", model, modelRegistry: registry });
-  await mock.commands.get("provider-usage")!.handler("", ctx);
+  await mock.commands.get("provider-usage:print")!.handler("", ctx);
   const text = notifications[0]?.message ?? "";
   assert.match(text, /Authentication unavailable: No runtime credential/);
   assert.doesNotMatch(text, /API-key|Unsupported/);
