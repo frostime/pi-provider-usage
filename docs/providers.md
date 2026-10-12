@@ -1,6 +1,6 @@
 # Provider 说明
 
-查询规则来自上游 `pi-usage`，保留 Provider 自身的额度、余额和支出语义。表中的 ID 可直接用于 `/provider-usage <id>`；补全会根据 Pi 配置筛选。
+查询规则来自上游 `pi-usage`，保留 Provider 自身的额度、余额和支出语义。表中的 ID 可直接用于 `/provider-usage:print <id>` 和 `/provider-usage:overlay <id>`；补全会根据 Pi 配置筛选。
 
 | Provider ID | 返回内容 |
 | --- | --- |

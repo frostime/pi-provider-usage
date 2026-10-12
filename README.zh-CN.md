@@ -5,15 +5,21 @@
 ## 使用
 
 ```text
-/provider-usage                 查询当前模型的 Provider
-/provider-usage codex           查询 OpenAI Codex
-/provider-usage opencode-go     查询 OpenCode Go
-/provider-usage all             查询所有已配置且受支持的 Provider
+/provider-usage:print                   打印当前模型的 Provider
+/provider-usage:print codex             打印 OpenAI Codex
+/provider-usage:print all               打印所有已配置且受支持的 Provider
+
+/provider-usage:overlay                 用浮层显示当前模型的 Provider
+/provider-usage:overlay opencode-go     在浮层中显示 OpenCode Go
+/provider-usage:overlay all             在浮层中显示所有已配置且受支持的 Provider
+/provider-usage:overlay close           关闭浮层
 ```
 
-输入 `/provider-usage ` 后补全参数。补全只列出已配置的、内置支持的 Provider 和 `all`；`codex` 是 `openai-codex` 的简写，完整 ID 也可使用。查询其他 Provider 不会切换当前模型。
+输入 `/provider-usage:print ` 或 `/provider-usage:overlay ` 后补全参数。补全只列出已配置的、内置支持的 Provider 和 `all`；overlay 命令另外提供 `close`。`codex` 是 `openai-codex` 的简写，完整 ID 也可使用。查询其他 Provider 不会切换当前模型。
 
-命令会在右侧显示一个 Overlay 浮层，内部显示查询进度和快照时间。
+`print` 只查询一次，以纯文本报告结果，适用于 TUI 和 RPC 模式，不打开面板。
+
+`overlay` 在右侧显示一个浮层，内部显示查询进度和快照时间，只在 TUI 模式可用。
 
 ![Overlay](./assets/showit.webp)
 
@@ -23,7 +29,7 @@
 | `Ctrl+Alt+Q` | 关闭浮层，并取消尚未完成的查询 |
 | `Ctrl+Alt+↑/↓` | 滚动长结果 |
 
-再次执行命令会替换已有浮层，不叠加窗口。关闭、模型或会话切换、退出后会清理浮层和输入监听。
+再次执行 overlay 命令会把已有浮层切到新范围，不叠加窗口。`close`、模型或会话切换、退出后都会清理浮层和输入监听。
 
 ## 从 npm 安装
 

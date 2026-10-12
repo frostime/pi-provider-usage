@@ -7,15 +7,21 @@ A Pi extension that only queries Provider usage, forked and modified from [pi-us
 ## Usage
 
 ```text
-/provider-usage                 Query the Provider of the current model
-/provider-usage codex           Query OpenAI Codex
-/provider-usage opencode-go     Query OpenCode Go
-/provider-usage all             Query all configured and supported Providers
+/provider-usage:print                   Print the Provider of the current model
+/provider-usage:print codex             Print OpenAI Codex
+/provider-usage:print all               Print all configured and supported Providers
+
+/provider-usage:overlay                 Show the current Provider in an overlay panel
+/provider-usage:overlay opencode-go     Show OpenCode Go in that panel
+/provider-usage:overlay all             Show all configured and supported Providers
+/provider-usage:overlay close           Close the panel
 ```
 
-Type `/provider-usage ` to trigger argument completion. Completion only lists configured, built-in supported Providers and `all`; `codex` is a shorthand for `openai-codex`, and the full ID also works. Querying another Provider does not switch the current model.
+Type `/provider-usage:print ` or `/provider-usage:overlay ` to trigger argument completion. Completion only lists configured, built-in supported Providers and `all`; the overlay command also offers `close`. `codex` is a shorthand for `openai-codex`, and the full ID also works. Querying another Provider does not switch the current model.
 
-The command displays an overlay panel on the right side, showing query progress and snapshot time.
+`print` queries once and reports the result as plain text. It works in TUI and RPC mode and opens no panel.
+
+`overlay` displays a panel on the right side, showing query progress and snapshot time. It requires TUI mode.
 
 ![Overlay](./assets/showit.webp)
 
@@ -25,7 +31,7 @@ The command displays an overlay panel on the right side, showing query progress 
 | `Ctrl+Alt+Q` | Close the overlay and cancel any pending queries |
 | `Ctrl+Alt+↑/↓` | Scroll through long results |
 
-Running the command again replaces the existing overlay rather than stacking windows. The overlay and input listeners are cleaned up on close, model or session switch, or exit.
+Running the overlay command again retargets the existing panel instead of stacking windows. The overlay and input listeners are cleaned up on `close`, model or session switch, or exit.
 
 ## Install from npm
 
