@@ -9,6 +9,23 @@ This file tracks this package only. The upstream history is kept separately in
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
+### Added
+- Each provider block in the overlay starts with a full-width, accent-colored title rule. The rule
+  replaces the plain heading line, so it adds no height.
+
+### Changed
+- The overlay caps its width at 72 columns (40% of the terminal, minimum 44) instead of growing with
+  the terminal, and follows terminal resizes without leaving an oversized panel.
+- The overlay shrinks to its report height instead of always claiming 75% of the screen. Long reports
+  still scroll inside the panel with the footer pinned.
+- Usage rows use a narrower label column and progress bar in both the overlay and `print` output. A
+  row that still does not fit moves the whole value (bar, percentage, reset time) below its label.
+- Reset times are compact and locale-independent: `HH:mm` for today, `MM-DD HH:mm` otherwise, with
+  the year only when it differs.
+- Narrow panels shorten the footer and snapshot line instead of wrapping them.
+
 ## [0.3.0] - 2026-10-13
 
 ### Changed
