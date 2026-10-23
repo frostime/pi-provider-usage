@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
-import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { test } from "vitest";
 import { openUsageOverlay } from "../src/usage-overlay.js";
@@ -165,6 +165,28 @@ function state(message: string): ProviderUsageState {
   };
 }
 
+function openCodeState(): ProviderUsageState {
+  return {
+    status: "ready",
+    providerId: "opencode-go",
+    providerName: "OpenCode Go",
+    displayState: "current",
+    report: {
+      providerId: "opencode-go",
+      providerName: "OpenCode Go",
+      capturedAt: 1,
+      source: "opencode-go",
+      semantics: { kind: "consumer-subscription", label: "OpenCode Zen plan usage" },
+      buckets: [
+        { id: "rolling", label: "Rolling window", unit: "percent", used: 4, remaining: 96, resetsAt: 1_700_000_000 },
+        { id: "weekly", label: "Weekly window", unit: "percent", used: 64, remaining: 36, resetsAt: 1_700_600_000 },
+        { id: "monthly", label: "Monthly window", unit: "percent", used: 81, remaining: 19, resetsAt: 1_702_000_000 },
+      ],
+      metrics: [],
+    },
+  };
+}
+
 function pendingQueries() {
   const requests: Array<ReturnType<typeof deferred<readonly ProviderUsageState[]>> & { signal: AbortSignal }> = [];
   return {
@@ -186,14 +208,15 @@ test("opens synchronously without taking focus, and intercepts only visible pane
   assert.equal(ui.attached, true);
   assert.equal(ui.input(controls.refresh), false);
   await flush();
-  assert.deepEqual(ui.options, {
+  const { visible, ...fixedOptions } = ui.options as OverlayOptions;
+  assert.deepEqual(fixedOptions, {
     nonCapturing: true,
     anchor: "top-right",
-    width: "40%",
-    minWidth: 40,
+    width: 48,
     maxHeight: "75%",
     margin: { top: 1, bottom: 1, left: 2, right: 2 },
   });
+  assert.equal(typeof visible, "function");
   assert.equal(ui.listeners, 1);
   assert.equal(ui.editor, "draft 中文");
   assert.equal(ui.focus, ui.editorFocus);
@@ -333,6 +356,56 @@ test("query failures are visible and retryable without discarding a successful s
   assert.equal(ui.disposals, 1);
 });
 
+test("caps the panel width so a wide terminal does not stretch it", async () => {
+  for (const [columns, expected] of [
+    [400, 72],
+    [180, 72],
+    [120, 48],
+    [100, 44],
+    [60, 44],
+  ] as const) {
+    const ui = fakeUI();
+    ui.terminal.columns = columns;
+    const overlay = openUsageOverlay(ui.ctx, "all", async () => [state("x")]);
+    await flush();
+    const options = ui.options as OverlayOptions;
+    assert.equal(options.width, expected, `${columns} columns at open`);
+    // The host calls this before resolving the layout on every render, including after a resize.
+    assert.equal(options.visible?.(columns, 32), true);
+    assert.equal(options.width, expected, `${columns} columns after resize`);
+    overlay.close();
+    await overlay.closed;
+  }
+});
+
+test("shrinks to the report height and keeps a usage row on one line", async () => {
+  const ui = fakeUI();
+  const overlay = openUsageOverlay(ui.ctx, "opencode-go", async () => [openCodeState()]);
+  await flush();
+  const lines = ui.render(72).map(plain);
+  assert.ok(lines.length < Math.floor(ui.terminal.rows * 0.75), `panel claimed ${lines.length} rows`);
+  assert.ok(lines.some((line) => /Ctrl\+Alt\+R refresh/.test(line)));
+  const rolling = lines.find((line) => line.includes("Rolling window:"));
+  assert.ok(rolling, lines.join("\n"));
+  assert.match(rolling, /\[[█░]{14}\] 96% left/);
+  assert.match(rolling, /resets/);
+  overlay.close();
+  await overlay.closed;
+});
+
+test("still caps and scrolls a report taller than the terminal", async () => {
+  const ui = fakeUI();
+  const message = Array.from({ length: 60 }, (_, i) => `row-${i}`).join("\n");
+  const overlay = openUsageOverlay(ui.ctx, "all", async () => [state(message)]);
+  await flush();
+  const lines = ui.render(72).map(plain);
+  assert.equal(lines.length, Math.min(Math.floor(ui.terminal.rows * 0.75), ui.terminal.rows - 2));
+  for (let i = 0; i < 400; i++) ui.input(controls.down);
+  assert.match(plain(ui.render(72).join("\n")), /row-59/);
+  overlay.close();
+  await overlay.closed;
+});
+
 test("keeps detailed provider currencies and selection semantics in the panel", async () => {
   const ui = fakeUI();
   ui.terminal.rows = 80;
@@ -414,7 +487,8 @@ test("wraps ANSI/CJK by columns, pins the footer, scrolls to both ends, and recl
   const bottom = plain(ui.render(40).join("\n"));
   assert.match(bottom, /row-39/);
   assert.doesNotMatch(bottom, /row-0 /);
-  assert.match(bottom, /Ctrl\+Alt\+Q close/);
+  // The footer may use the compact wording at this width; both forms keep the close hint.
+  assert.match(bottom, /Q close/);
   ui.input(controls.down);
   assert.equal(plain(ui.render(40).join("\n")), bottom);
   ui.terminal.rows = 64;

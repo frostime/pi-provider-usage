@@ -1,11 +1,24 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, ScrollView, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Component, OverlayHandle, TUI } from "@earendil-works/pi-tui";
+import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { errorMessage, redactUsageError } from "./core.js";
 import { formatProviderStates } from "./format.js";
 import type { ProviderUsageState } from "./types.js";
 
 const OVERLAY_HOST_KEY = "frostime.provider-usage.overlay";
+
+/** Panel width clamp: 40% of the terminal, but never wider than a readable data panel. */
+const PANEL_WIDTH_SHARE = 0.4;
+const PANEL_MIN_WIDTH = 44;
+const PANEL_MAX_WIDTH = 72;
+const FOOTER_FULL = "Ctrl+Alt+R refresh · Ctrl+Alt+Q close · Ctrl+Alt+↑/↓ scroll";
+const FOOTER_COMPACT = "Ctrl+Alt: R refresh · Q close · ↑/↓ scroll";
+const FOOTER_TINY = "Ctrl+Alt:\nR refresh\nQ close\n↑/↓ scroll";
+
+function panelWidth(terminalColumns: number): number {
+  const share = Math.floor(terminalColumns * PANEL_WIDTH_SHARE);
+  return Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, share));
+}
 
 /** Queries one usage scope; called on open, on retarget, and on manual refresh. */
 export type UsageQuery = (signal: AbortSignal) => Promise<readonly ProviderUsageState[]>;
@@ -47,7 +60,7 @@ class UsageOverlay implements Component, UsageOverlayView {
   private isClosed = false;
   private generation = 0;
   private pending?: AbortController;
-  private snapshot?: { text: string; timestamp: string; count: number };
+  private snapshot?: { states: readonly ProviderUsageState[]; timestamp: string };
   private failure?: string;
   private readonly viewport: ScrollView;
 
@@ -67,14 +80,22 @@ class UsageOverlay implements Component, UsageOverlayView {
 
   attach(tui: TUI): Component & { dispose(): void } {
     this.tui = tui;
-    this.handle = tui.showOverlay(this, {
+    const options: OverlayOptions = {
       nonCapturing: true,
       anchor: "top-right",
-      width: "40%",
-      minWidth: 40,
+      // Absolute width: the host re-resolves a percentage on every render, so "40%" would keep
+      // widening with the terminal instead of stopping at a readable maximum.
+      width: panelWidth(tui.terminal?.columns ?? 80),
       maxHeight: "75%",
       margin: { top: 1, bottom: 1, left: 2, right: 2 },
-    });
+      // The host calls this before resolving the layout and keeps this options object, so the
+      // clamp also follows a terminal that grows or shrinks while the panel stays open.
+      visible: (termWidth) => {
+        options.width = panelWidth(termWidth);
+        return true;
+      },
+    };
+    this.handle = tui.showOverlay(this, options);
     this.listen(this.handle);
     return {
       render: () => [],
@@ -114,11 +135,7 @@ class UsageOverlay implements Component, UsageOverlayView {
     try {
       const states = await this.query(controller.signal);
       if (this.isClosed || generation !== this.generation) return;
-      this.snapshot = {
-        text: formatProviderStates(states) || "No providers in this scope.",
-        timestamp: new Date().toLocaleTimeString(),
-        count: states.length,
-      };
+      this.snapshot = { states, timestamp: new Date().toLocaleTimeString() };
       this.viewport.scrollToStart();
     } catch (error) {
       if (this.isClosed || generation !== this.generation) return;
@@ -157,29 +174,22 @@ class UsageOverlay implements Component, UsageOverlayView {
     const theme = this.ctx.ui.theme;
     const rows = this.tui?.terminal.rows ?? 24;
     // Match the host's maxHeight/margin clamp so it never crops the pinned footer.
-    const height = Math.max(1, Math.min(Math.floor(rows * 0.75), rows - 2));
-    const bordered = width >= 4 && height >= 5;
+    const maxHeight = Math.max(1, Math.min(Math.floor(rows * 0.75), rows - 2));
+    const bordered = width >= 4 && maxHeight >= 5;
     const innerWidth = bordered ? width - 2 : width;
-    const innerHeight = height - (bordered ? 2 : 0);
-    let footer = wrapTextWithAnsi("Ctrl+Alt+R refresh · Ctrl+Alt+Q close\nCtrl+Alt+↑/↓ scroll", innerWidth);
-    if (footer.length > innerHeight - 3) {
-      footer = wrapTextWithAnsi(
-        innerWidth >= 36 ? "Ctrl+Alt: R refresh Q close ↑/↓ scroll" : "Ctrl+Alt:\nR refresh\nQ close\n↑/↓ scroll",
-        innerWidth,
-      );
-      if (footer.length > Math.max(1, innerHeight - 2)) {
-        footer = [truncateToWidth("Ctrl+Alt: R/Q/↑↓", innerWidth)];
-      }
-    }
+    const maxInnerHeight = maxHeight - (bordered ? 2 : 0);
+    const footer = this.footerLines(innerWidth, maxInnerHeight);
     const header = [
       theme.fg("accent", `Provider usage / ${this.scope}`),
       ...wrapTextWithAnsi(
-        theme.fg(this.pending || this.failure ? "warning" : "muted", this.snapshotLabel()),
+        theme.fg(this.pending || this.failure ? "warning" : "muted", this.snapshotLabel(innerWidth)),
         innerWidth,
       ),
-    ].slice(0, Math.max(0, innerHeight - footer.length));
-    const bodyHeight = Math.max(0, innerHeight - header.length - footer.length);
+    ].slice(0, Math.max(0, maxInnerHeight - footer.length));
     const report = this.viewport.render(innerWidth);
+    // Size to the report instead of always claiming the height cap; long reports still scroll.
+    const innerHeight = Math.min(maxInnerHeight, header.length + report.length + footer.length);
+    const bodyHeight = Math.max(0, innerHeight - header.length - footer.length);
     this.viewport.updateLayout(report.length, bodyHeight, () => this.requestRender());
     const body = report.slice(this.viewport.scrollTop, this.viewport.scrollTop + bodyHeight);
     while (body.length < bodyHeight) body.push("");
@@ -194,18 +204,46 @@ class UsageOverlay implements Component, UsageOverlayView {
     ];
   }
 
-  private snapshotLabel(): string {
+  /** Prefer a single control line; degrade only when the terminal is too narrow or too short. */
+  private footerLines(innerWidth: number, maxInnerHeight: number): string[] {
+    const full = wrapTextWithAnsi(FOOTER_FULL, innerWidth);
+    if (full.length === 1) return full;
+    const compact = wrapTextWithAnsi(innerWidth >= 36 ? FOOTER_COMPACT : FOOTER_TINY, innerWidth);
+    if (compact.length === 1) return compact;
+    if (compact.length <= Math.max(1, maxInnerHeight - 2)) return compact;
+    return [truncateToWidth("Ctrl+Alt: R/Q/↑↓", innerWidth)];
+  }
+
+  /** Drop the least important clauses first so a narrow panel keeps a two-line header. */
+  private snapshotLabel(innerWidth: number): string {
     const snapshot = this.snapshot;
-    const stamp = snapshot ? `Snapshot ${snapshot.timestamp} · ${snapshot.count} providers` : "No snapshot";
-    if (this.pending) return `${snapshot ? "Refreshing · prior" : "Querying"} · ${stamp}`;
-    if (this.failure) return `Query failed · ${snapshot ? "prior · " : ""}${stamp}`;
-    return `${stamp} · no auto-refresh`;
+    const stamp = snapshot ? `Snapshot ${snapshot.timestamp} · ${snapshot.states.length} providers` : "No snapshot";
+    const detail = this.pending
+      ? `${snapshot ? "Refreshing · prior" : "Querying"} · ${stamp}`
+      : this.failure
+        ? `Query failed · ${snapshot ? "prior · " : ""}${stamp}`
+        : `${stamp} · no auto-refresh`;
+    const withoutAutoRefresh = detail.replace(" · no auto-refresh", "");
+    const compactStamp = snapshot ? `Snapshot ${snapshot.timestamp}` : "No snapshot";
+    const compact = withoutAutoRefresh.replace(stamp, compactStamp);
+    for (const candidate of [detail, withoutAutoRefresh, compact]) {
+      if (candidate.length <= innerWidth) return candidate;
+    }
+    return compact;
   }
 
   private renderReport(width: number): string[] {
+    const snapshot = this.snapshot;
     const text = [
       this.failure ? `Query failed: ${this.failure}` : undefined,
-      this.snapshot?.text ?? (this.pending ? "Querying provider usage…" : "No snapshot available."),
+      snapshot
+        ? formatProviderStates(snapshot.states, {
+            width,
+            decorateSection: (line) => this.ctx.ui.theme.fg("accent", line),
+          }) || "No providers in this scope."
+        : this.pending
+          ? "Querying provider usage…"
+          : "No snapshot available.",
     ]
       .filter((line) => line !== undefined)
       .join("\n\n");

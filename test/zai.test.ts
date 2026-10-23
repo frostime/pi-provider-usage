@@ -151,7 +151,7 @@ test("Z.AI adapter normalizes 5h, weekly, and MCP monthly windows", () => {
   assert.match(rendered, /Z\.AI Usage · Current/);
   assert.match(rendered, /GLM Coding Plan usage/);
   assert.match(rendered, /MCP monthly allowance:\s+224 of 4000 used · 3776 left \(resets /);
-  assert.match(rendered, /5h window:\s+\[█{17}░{3}\] 87% left \(resets /);
+  assert.match(rendered, /5h window:\s+\[█{12}░{2}\] 87% left \(resets /);
   assert.match(rendered, /Weekly window:\s+120000 of 500000 used · 380000 left \(resets /);
   assert.match(rendered, /search-prime:\s+67/);
 });

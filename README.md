@@ -21,7 +21,7 @@ Type `/provider-usage:print ` or `/provider-usage:overlay ` to trigger argument 
 
 `print` queries once and reports the result as plain text. It works in TUI and RPC mode and opens no panel.
 
-`overlay` displays a panel on the right side, showing query progress and snapshot time. It requires TUI mode.
+`overlay` displays a panel on the right side, capped at 72 columns and sized to its report, showing query progress and snapshot time. It requires TUI mode.
 
 ![Overlay](./assets/showit.webp)
 
