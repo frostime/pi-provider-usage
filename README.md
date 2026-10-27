@@ -28,10 +28,27 @@ Type `/provider-usage:print ` or `/provider-usage:overlay ` to trigger argument 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+Alt+R` | Re-query the current scope; `all` re-checks configured Providers |
+| `Ctrl+Alt+A` | Set overlay auto-refresh: `on`, `off`, or an integer interval in minutes |
 | `Ctrl+Alt+Q` | Close the overlay and cancel any pending queries |
 | `Ctrl+Alt+↑/↓` | Scroll through long results |
 
 Running the overlay command again retargets the existing panel instead of stacking windows. The overlay and input listeners are cleaned up on `close`, model or session switch, or exit.
+
+### Overlay auto-refresh
+
+Auto-refresh is off by default. With the panel open, press `Ctrl+Alt+A` to enter `on`, `off`, or a whole number of minutes (1–35791). Enter applies the value; Esc or empty input cancels. `on` reuses the last interval, or 5 minutes if none was set. The input dialog temporarily takes focus and restores the previous focus when dismissed.
+
+To enable it by default, add this to Pi's `settings.json` and run `/reload`:
+
+```json
+{
+  "npm:@frostime/pi-provider-usage": {
+    "autoRefreshOverlay": 5
+  }
+}
+```
+
+The setting accepts `"on"`, `"off"`, or an integer number of minutes, not booleans. Shortcut changes last for this Pi run, including reopening the panel and switching models or sessions; they do not modify the file. Polling only runs while the overlay is open. Each completed query schedules the next refresh, with no overlapping automatic queries. Automatic refresh preserves the scroll position; manual refresh returns to the top. Closing the panel clears its timer and pending input dialog. `print` is unchanged and always queries on demand.
 
 ## Install from npm
 

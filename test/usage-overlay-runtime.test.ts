@@ -108,6 +108,17 @@ for (const Renderer of [TuiMainScreen, TuiAltScreen]) {
       await frame();
       assert.equal(signals.length, 2);
       assert.equal(editor.draft, "keep draftq");
+      feed("\x1b[97;7u");
+      await frame();
+      assert.equal(editor.focused, false);
+      assert.ok(writes.some((data) => data.includes("Overlay auto-refresh")));
+      feed("1");
+      feed("\r");
+      await frame();
+      assert.equal(editor.focused, true);
+      assert.equal(editor.draft, "keep draftq");
+      assert.equal(signals.length, 2);
+      assert.ok(writes.some((data) => data.includes("Auto: 1 min")));
       streamed = "assistant continues streaming underneath usage";
       tui.requestRender();
       await frame();
@@ -125,6 +136,17 @@ for (const Renderer of [TuiMainScreen, TuiAltScreen]) {
       confirmationHandle = tui.showOverlay(confirmation, { width: 32 });
       await frame();
       assert.equal(confirmation.focused, true);
+      feed("\x1b[97;7u");
+      await frame();
+      assert.equal(confirmation.focused, false);
+      feed("off");
+      feed("\r");
+      await frame();
+      assert.equal(confirmation.focused, true);
+      assert.deepEqual(confirmation.inputs, []);
+      // Close usage while its settings dialog is active; keep the confirmation intact.
+      feed("\x1b[97;7u");
+      await frame();
       feed("\x1b[113;7u");
       await overlay.closed;
       assert.equal(confirmationHandle.isFocused(), true);

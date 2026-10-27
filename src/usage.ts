@@ -17,6 +17,7 @@ import {
 } from "./query.js";
 import type { ProviderUsageState, ResolvedUsageAuth, UsageProviderAdapter } from "./types.js";
 import { openUsageOverlay, type UsageOverlayView } from "./usage-overlay.js";
+import { readAutoRefreshDefault, USAGE_SETTINGS_KEY, type OverlayAutoRefresh } from "./overlay-auto-refresh.js";
 import { resolveUsageTarget } from "./usage-targets.js";
 
 const PRINT_COMMAND = "provider-usage:print";
@@ -50,6 +51,7 @@ export default function providerUsageExtension(
   const credentialCandidates = createOAuthCredentialCandidateReader(pi, dependencies.credentialReader);
   let completionContext: ExtensionContext | undefined;
   let overlay: UsageOverlayView | undefined;
+  let autoRefreshPreference: OverlayAutoRefresh | undefined;
   let pendingPrint: AbortController | undefined;
 
   const cancelActiveWork = () => {
@@ -183,7 +185,17 @@ export default function providerUsageExtension(
         overlay.retarget(parsed.scope.label, query);
         return;
       }
-      const view = openUsageOverlay(ctx, parsed.scope.label, query);
+      if (!autoRefreshPreference) {
+        const defaults = readAutoRefreshDefault(pi.getSettings());
+        autoRefreshPreference = defaults.preference;
+        if (defaults.invalid) {
+          ctx.ui.notify(`${USAGE_SETTINGS_KEY}.autoRefreshOverlay must be on, off, or a positive integer of minutes; using off.`, "warning");
+        }
+      }
+      const view = openUsageOverlay(ctx, parsed.scope.label, query, {
+        autoRefresh: autoRefreshPreference,
+        onAutoRefreshChange: (preference) => { autoRefreshPreference = preference; },
+      });
       overlay = view;
       // Do not keep the slash-command handler pending while the user keeps the panel open.
       void view.closed.then(() => {

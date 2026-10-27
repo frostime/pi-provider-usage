@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test, vi } from "vitest";
-import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import usageExtension from "../src/usage.js";
 import { createMockContext, createMockPi, emit } from "./support.js";
 
@@ -14,7 +14,7 @@ const model = {
   api: "openai-codex-responses",
 };
 
-function setup() {
+function setup(settings: Record<string, unknown> = {}) {
   let key = "synthetic-original-key";
   const context = createMockContext({
     model,
@@ -34,6 +34,7 @@ function setup() {
     },
   });
   const mock = createMockPi();
+  mock.rawPi.getSettings = () => settings;
   usageExtension(mock.pi, { credentialReader: () => undefined });
   return {
     ...context,
@@ -214,4 +215,155 @@ test("close is accepted as an argument, not as a provider", async () => {
   );
   await s.command.handler("close codex", s.ctx);
   assert.match(s.notifications[0]!.message, /Usage: \/provider-usage:overlay/);
+});
+
+const AUTO = "\x1b[97;7u";
+
+function setAutoRefresh(s: ReturnType<typeof setup>, value: string) {
+  assert.equal(s.input(AUTO), true);
+  const dialog = s.overlays.at(-1)!.component!;
+  dialog.handleInput(value);
+  dialog.handleInput("\r");
+  return s.overlays.at(-1)!;
+}
+
+function panelOutput(s: ReturnType<typeof setup>) {
+  return stripTerminalSequences(s.overlays.find((overlay) => !overlay.closed)!.component.render(100).join("\n"));
+}
+
+test("overlay shortcut enables, changes and stops polling without writing session data", async () => {
+  vi.useFakeTimers();
+  const s = setup();
+  const fetch = vi.fn(async () => report(30));
+  vi.stubGlobal("fetch", fetch);
+  await s.command.handler("codex", s.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.equal(setAutoRefresh(s, "1").closed, true);
+  assert.match(panelOutput(s), /Auto: 1 min/);
+  await vi.advanceTimersByTimeAsync(59_999);
+  assert.equal(fetch.mock.calls.length, 1);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.equal(fetch.mock.calls.length, 2);
+
+  setAutoRefresh(s, "off");
+  await vi.advanceTimersByTimeAsync(120_000);
+  assert.equal(fetch.mock.calls.length, 2);
+  assert.match(panelOutput(s), /Auto: off/);
+  setAutoRefresh(s, "on");
+  assert.match(panelOutput(s), /Auto: 1 min/);
+  await vi.advanceTimersByTimeAsync(60_000);
+  assert.equal(fetch.mock.calls.length, 3);
+
+  // Closing stops all timers, while reopening retains the run-local preference.
+  s.input(CLOSE);
+  assert.equal(vi.getTimerCount(), 0);
+  await vi.advanceTimersByTimeAsync(120_000);
+  assert.equal(fetch.mock.calls.length, 3);
+  await s.command.handler("all", s.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.match(panelOutput(s), /Auto: 1 min/);
+  s.input(CLOSE);
+  assert.deepEqual(s.entries, []);
+  assert.deepEqual(s.sentMessages, []);
+  assert.deepEqual(s.sentUserMessages, []);
+});
+
+test("invalid and cancelled input keep the previous preference and never stack settings dialogs", async () => {
+  vi.useFakeTimers();
+  const s = setup();
+  vi.stubGlobal("fetch", vi.fn(async () => report(30)));
+  await s.command.handler("codex", s.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  const dialogOverlay = setAutoRefresh(s, "true");
+  assert.equal(dialogOverlay.closed, false);
+  assert.match(stripTerminalSequences(dialogOverlay.component.render(54).join("\n")), /Use on, off/);
+  assert.match(panelOutput(s), /Auto: off/);
+  s.input(AUTO);
+  assert.equal(s.overlays.length, 2);
+  dialogOverlay.component.handleInput("\x1b");
+  assert.equal(dialogOverlay.closed, true);
+  assert.equal(vi.getTimerCount(), 0);
+
+  s.input(AUTO);
+  s.input(CLOSE);
+  assert.ok(s.overlays.every((overlay) => overlay.closed));
+  assert.equal(s.terminalInputHandlers.size, 0);
+  assert.equal(vi.getTimerCount(), 0);
+});
+
+test("settings dialog stays near usage and paints a padded frame at wide and narrow widths", async () => {
+  vi.useFakeTimers();
+  const s = setup();
+  vi.stubGlobal("fetch", vi.fn(async () => report(30)));
+  await s.command.handler("codex", s.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  s.input(AUTO);
+  const dialog = s.overlays.at(-1)!;
+  assert.equal(dialog.options.anchor, "top-right");
+  assert.deepEqual(dialog.options.margin, { top: 3, bottom: 1, left: 4, right: 4 });
+  for (const columns of [400, 160, 100, 60]) {
+    s.overlays[0]!.options.visible(columns);
+    dialog.options.visible(columns);
+    assert.equal(dialog.options.width, s.overlays[0]!.options.width - 4);
+    const width = dialog.options.width;
+    const lines = dialog.component.render(width);
+    assert.match(stripTerminalSequences(lines[0]), /^╭─+╮$/);
+    assert.match(stripTerminalSequences(lines.at(-1)), /^╰─+╯$/);
+    for (const line of lines) assert.equal(visibleWidth(line), width);
+    for (const line of lines.slice(1, -1)) {
+      assert.match(stripTerminalSequences(line), /^│ .* │$/);
+    }
+    const text = stripTerminalSequences(lines.join("\n"));
+    assert.match(text, /Current: off · Interval: 5 min/);
+    assert.match(text, /on \/ off \/ minutes/);
+    assert.match(text, /Enter apply · Esc cancel/);
+  }
+  s.input(CLOSE);
+});
+
+test("configured polling waits for completion, survives failure and clears on lifecycle changes", async () => {
+  vi.useFakeTimers();
+  const s = setup({ "npm:@frostime/pi-provider-usage": { autoRefreshOverlay: 1 } });
+  let finish!: (response: Response) => void;
+  const fetch = vi.fn()
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }))
+    .mockRejectedValueOnce(new Error("network unavailable"))
+    .mockImplementation(async () => report(50));
+  vi.stubGlobal("fetch", fetch);
+  await s.command.handler("codex", s.ctx);
+  await vi.advanceTimersByTimeAsync(10_000);
+  assert.equal(fetch.mock.calls.length, 1);
+  finish(report(30));
+  await vi.advanceTimersByTimeAsync(1);
+  await vi.advanceTimersByTimeAsync(59_999);
+  assert.equal(fetch.mock.calls.length, 2);
+  assert.match(panelOutput(s), /network unavailable/);
+  await vi.advanceTimersByTimeAsync(60_000);
+  assert.equal(fetch.mock.calls.length, 3);
+  assert.match(panelOutput(s), /50%/);
+  await emit(s, "model_select", s.ctx);
+  assert.equal(vi.getTimerCount(), 0);
+  await vi.advanceTimersByTimeAsync(120_000);
+  assert.equal(fetch.mock.calls.length, 3);
+});
+
+test("on uses five minutes by default; invalid config stays off with one warning", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn(async () => report(30)));
+  const s = setup({ "npm:@frostime/pi-provider-usage": { autoRefreshOverlay: "on" } });
+  await s.command.handler("codex", s.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.match(panelOutput(s), /Auto: 5 min/);
+  s.input(CLOSE);
+
+  const invalid = setup({ "npm:@frostime/pi-provider-usage": { autoRefreshOverlay: true } });
+  await invalid.command.handler("codex", invalid.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.match(panelOutput(invalid), /Auto: off/);
+  assert.equal(invalid.notifications.length, 1);
+  invalid.input(CLOSE);
+  await invalid.command.handler("codex", invalid.ctx);
+  await vi.advanceTimersByTimeAsync(1);
+  assert.equal(invalid.notifications.length, 1);
+  invalid.input(CLOSE);
 });

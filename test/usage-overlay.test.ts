@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { ExtensionContext, ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component, OverlayHandle, OverlayOptions, TUI } from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { test } from "vitest";
+import { test, vi } from "vitest";
 import { openUsageOverlay } from "../src/usage-overlay.js";
 import type { ProviderUsageState } from "../src/types.js";
 
@@ -251,7 +251,7 @@ test("refresh retains the prior timestamped snapshot, aborts superseded queries,
   await flush();
   const snapshot = plain(ui.render(80).join("\n"));
   assert.match(snapshot, /Snapshot \S+/);
-  assert.match(snapshot, /no auto-refresh/);
+  assert.match(snapshot, /Auto: off/);
   ui.input(controls.refresh);
   assert.match(plain(ui.render(80).join("\n")), /Refreshing · prior.*Snapshot/);
   assert.match(plain(ui.render(80).join("\n")), /first snapshot/);
@@ -356,6 +356,51 @@ test("query failures are visible and retryable without discarding a successful s
   assert.equal(ui.disposals, 1);
 });
 
+test("automatic refresh preserves scrolling, never overlaps, and manual refresh resets its timer", async () => {
+  vi.useFakeTimers();
+  const ui = fakeUI();
+  const work = pendingQueries();
+  const overlay = openUsageOverlay(ui.ctx, "all", work.query, {
+    autoRefresh: { enabled: true, minutes: 1 },
+  });
+  const states = [state(Array.from({ length: 60 }, (_, i) => `row-${i}`).join("\n"))];
+  try {
+    await vi.advanceTimersByTimeAsync(180_000);
+    assert.equal(work.requests.length, 1);
+    work.requests[0]!.resolve(states);
+    await flush();
+    ui.render(72);
+    for (let i = 0; i < 400; i++) ui.input(controls.down);
+    assert.match(plain(ui.render(72).join("\n")), /row-59/);
+    await vi.advanceTimersByTimeAsync(60_000);
+    assert.equal(work.requests.length, 2);
+    await vi.advanceTimersByTimeAsync(180_000);
+    assert.equal(work.requests.length, 2);
+    work.requests[1]!.resolve(states);
+    await flush();
+    assert.match(plain(ui.render(72).join("\n")), /row-59/);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    ui.input(controls.refresh);
+    assert.equal(work.requests.length, 3);
+    work.requests[2]!.resolve(states);
+    await flush();
+    assert.match(plain(ui.render(72).join("\n")), /row-0/);
+    await vi.advanceTimersByTimeAsync(30_000);
+    assert.equal(work.requests.length, 3);
+    await vi.advanceTimersByTimeAsync(30_000);
+    assert.equal(work.requests.length, 4);
+    overlay.close();
+    assert.equal(work.requests[3]!.signal.aborted, true);
+    work.requests[3]!.resolve(states);
+    await flush();
+    assert.equal(vi.getTimerCount(), 0);
+  } finally {
+    overlay.close();
+    vi.useRealTimers();
+  }
+});
+
 test("caps the panel width so a wide terminal does not stretch it", async () => {
   for (const [columns, expected] of [
     [400, 72],
@@ -384,7 +429,10 @@ test("shrinks to the report height and keeps a usage row on one line", async () 
   await flush();
   const lines = ui.render(72).map(plain);
   assert.ok(lines.length < Math.floor(ui.terminal.rows * 0.75), `panel claimed ${lines.length} rows`);
-  assert.ok(lines.some((line) => /Ctrl\+Alt\+R refresh/.test(line)));
+  const controls = lines.filter((line) => /Ctrl\+Alt/.test(line));
+  assert.equal(controls.length, 2);
+  assert.match(controls[0]!, /Ctrl\+Alt\+R refresh.*Ctrl\+Alt\+A auto-refresh/);
+  assert.match(controls[1]!, /Ctrl\+Alt\+Q close.*Ctrl\+Alt\+↑\/↓ scroll/);
   const rolling = lines.find((line) => line.includes("Rolling window:"));
   assert.ok(rolling, lines.join("\n"));
   assert.match(rolling, /\[[█░]{14}\] 96% left/);

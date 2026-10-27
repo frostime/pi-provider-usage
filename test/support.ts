@@ -36,6 +36,7 @@ export function createMockPi() {
     clear: () => subscriptions.clear(),
   };
   const rawPi = {
+    getSettings: () => ({}),
     registerCommand: (name: string, command: any) => commands.set(name, command),
     registerEntryRenderer: (type: string, renderer: Handler) => entryRenderers.set(type, renderer),
     on(name: string, handler: Handler) {

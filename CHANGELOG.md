@@ -9,6 +9,15 @@ This file tracks this package only. The upstream history is kept separately in
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-28
+
+### Added
+- Optional auto-refresh while the overlay is open, off by default. Use `Ctrl+Alt+A` to turn it
+  on or off or set the interval in minutes, or set `autoRefreshOverlay` in Pi settings.
+
+### Changed
+- Overlay shortcut hints use two rows so full key combinations remain readable at normal widths.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
@@ -67,7 +76,9 @@ This file tracks this package only. The upstream history is kept separately in
 - Fireworks billing accounts are queried automatically when only one is visible, and reported as needing an
   explicit choice when several are visible.
 
-[Unreleased]: https://github.com/frostime/pi-provider-usage/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/frostime/pi-provider-usage/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/frostime/pi-provider-usage/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/frostime/pi-provider-usage/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/frostime/pi-provider-usage/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/frostime/pi-provider-usage/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/frostime/pi-provider-usage/tree/v0.1.0
